@@ -1,0 +1,6 @@
+{
+  "name": "GPA Whiz",
+  "description": "Offline-first GPA and CGPA planner for Nigerian higher education institutions with timetable scheduling, scholarship tracking, and offline dossier exports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
