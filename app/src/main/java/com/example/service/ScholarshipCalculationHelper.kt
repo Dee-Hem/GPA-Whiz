@@ -304,8 +304,7 @@ object ScholarshipCalculationHelper {
             s.deadlineDate != null && s.status in ScholarshipStatus.ACTIVE && getDaysDifference(s.deadlineDate) in 0..30
         }
 
-        val completedApps = awarded + rejected
-        val successRate = if (completedApps > 0) (awarded.toDouble() / completedApps.toDouble()) * 100.0 else 0.0
+        val successRate = if (awaitingResults > 0) (awarded.toDouble() / awaitingResults.toDouble()) * 100.0 else 0.0
 
         val awardedFunding = calculateFundingByCurrency(scholarships, awardedOnly = true)
         val pipelineFunding = calculateFundingByCurrency(scholarships.filter { it.status in ScholarshipStatus.ACTIVE }, awardedOnly = false)

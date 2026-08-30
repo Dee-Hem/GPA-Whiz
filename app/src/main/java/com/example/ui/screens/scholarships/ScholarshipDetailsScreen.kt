@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -53,6 +54,16 @@ fun ScholarshipDetailsScreen(
     val isTargetCgpa = currentCgpa <= 0.0 && studentProfile.targetCgpa > 0.0
 
     val scholarship = scholarships.find { it.id == scholarshipId }
+
+    // Add BackHandler to handle system back button
+    BackHandler {
+        onNavigateBack()
+    }
+    
+    // Add BackHandler to handle system back button
+    BackHandler {
+        onNavigateBack()
+    }
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showAddRequirementDialog by remember { mutableStateOf(false) }

@@ -175,7 +175,7 @@ fun ScholarshipsScreen(
                 } else "0"
                 KpiCard(
                     title = "Awarded / Success",
-                    value = "${stats.awardedCount} (${stats.successRate.toInt()}%)",
+                    value = "${stats.awardedCount} (${"%.1f%%".format(stats.successRate)})",
                     subtext = "Funds: $totalAwardedFormatted",
                     color = Color(0xFF0F9D58)
                 )

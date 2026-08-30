@@ -315,7 +315,7 @@ object ScholarshipXlsxGenerator {
       <c r="A11" s="9" t="inlineStr"><is><t>Total Awarded Funding:</t></is></c>
       <c r="B11" s="7" t="inlineStr"><is><t>${if (stats.awardedFunding.isNotEmpty()) stats.awardedFunding.entries.joinToString(", ") { "${it.key}%,.0f".format(it.value) } else "None"}</t></is></c>
       <c r="C11" s="9" t="inlineStr"><is><t>Success Rate:</t></is></c>
-      <c r="D11" s="7" t="inlineStr"><is><t>%.1f%%</t></is></c>
+      <c r="D11" s="7" t="inlineStr"><is><t>${"%.1f%%".format(stats.successRate)}</t></is></c>
       <c r="E11" s="9" t="inlineStr"><is><t>Upcoming Deadlines (30d):</t></is></c>
       <c r="F11" s="7"><v>${stats.upcomingDeadlines}</v></c>
     </row>
@@ -587,7 +587,7 @@ object ScholarshipXlsxGenerator {
             sb.append("    <row r=\"$rowIdx\">\n")
             sb.append("      <c r=\"A$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(st)}</t></is></c>\n")
             sb.append("      <c r=\"B$rowIdx\" s=\"6\"><v>$count</v></c>\n")
-            sb.append("      <c r=\"C$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>%.1f%%</t></is></c>\n")
+            sb.append("      <c r=\"C$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${"%.1f%%".format(pct)}</t></is></c>\n")
             sb.append("    </row>\n")
             rowIdx++
         }
