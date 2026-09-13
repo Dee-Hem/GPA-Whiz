@@ -1,3 +1,5 @@
+Licensed under the GNU General Public License v3.0 — see LICENSE for details.
+
 # GPA Whiz
 
 **GPA Whiz** is an offline academic management application built to help university students calculate and track their GPA/CGPA, plan their academic performance, manage schedules, and keep track of scholarship opportunities and applications.
