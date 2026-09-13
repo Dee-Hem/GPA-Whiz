@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.*
+import com.example.service.CurrencyConverter
 import com.example.service.ScholarshipCalculationHelper
 import java.util.Calendar
 
@@ -58,7 +59,7 @@ fun ScholarshipFormDialog(
     var organization by remember { mutableStateOf(scholarship?.organization ?: "") }
     var description by remember { mutableStateOf(scholarship?.description ?: "") }
     var amountStr by remember { mutableStateOf(if ((scholarship?.amount ?: 0.0) > 0) scholarship!!.amount.toInt().toString() else "") }
-    var currency by remember { mutableStateOf(scholarship?.currency ?: "₦") }
+    var currency by remember { mutableStateOf(CurrencyConverter.normalizeCurrencyCode(scholarship?.currency ?: "NGN")) }
     var applicationUrl by remember { mutableStateOf(scholarship?.applicationUrl ?: "") }
     var organizationWebsite by remember { mutableStateOf(scholarship?.organizationWebsite ?: "") }
     var contactEmail by remember { mutableStateOf(scholarship?.contactEmail ?: "") }
@@ -82,7 +83,7 @@ fun ScholarshipFormDialog(
     val selectedBundledReqs = remember { mutableStateListOf<PredefinedRequirement>() }
     var showQuickBundling by remember { mutableStateOf(scholarship == null) }
 
-    val currencies = listOf("₦", "$", "£", "€", "CAD", "AUD", "GHS", "KES", "ZAR", "Other")
+    val currencies = listOf("NGN", "USD", "EUR", "GBP", "CAD", "AUD", "GHS", "KES", "ZAR", "Other")
 
     fun showDatePicker(initialMillis: Long?, onDateSelected: (Long) -> Unit) {
         val calendar = Calendar.getInstance()
@@ -402,7 +403,7 @@ fun ScholarshipFormDialog(
                             organization,
                             description,
                             amt,
-                            currency,
+                            CurrencyConverter.normalizeCurrencyCode(currency),
                             applicationUrl,
                             organizationWebsite,
                             contactEmail,

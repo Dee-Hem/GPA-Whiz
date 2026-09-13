@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.example.data.Scholarship
+import com.example.service.CurrencyConverter
 import com.example.service.ScholarshipCalculationHelper
 import java.util.Calendar
 
@@ -33,7 +34,7 @@ fun OutcomeDialog(
     val outcomes = listOf("Awarded", "Rejected", "Waitlisted", "Withdrawn", "Other")
     var selectedOutcome by remember { mutableStateOf(scholarship.outcome ?: "Awarded") }
     var awardAmountStr by remember { mutableStateOf(if ((scholarship.awardAmount ?: scholarship.amount) > 0) (scholarship.awardAmount ?: scholarship.amount).toInt().toString() else "") }
-    var awardCurrency by remember { mutableStateOf(scholarship.awardCurrency ?: scholarship.currency) }
+    var awardCurrency by remember { mutableStateOf(CurrencyConverter.normalizeCurrencyCode(scholarship.awardCurrency ?: scholarship.currency)) }
     var awardDate by remember { mutableStateOf(scholarship.awardDate ?: System.currentTimeMillis()) }
     var notes by remember { mutableStateOf(scholarship.awardNotes ?: "") }
 
@@ -142,7 +143,8 @@ fun OutcomeDialog(
             Button(
                 onClick = {
                     val amt = awardAmountStr.toDoubleOrNull()
-                    onSave(selectedOutcome, amt, awardCurrency, awardDate, notes.ifBlank { null })
+                    val normalizedCurr = if (awardCurrency.isNotBlank()) CurrencyConverter.normalizeCurrencyCode(awardCurrency) else null
+                    onSave(selectedOutcome, amt, normalizedCurr, awardDate, notes.ifBlank { null })
                 },
                 modifier = Modifier.testTag("submit_outcome_button")
             ) {

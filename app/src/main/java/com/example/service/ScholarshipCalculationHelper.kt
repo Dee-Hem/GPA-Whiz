@@ -282,16 +282,20 @@ object ScholarshipCalculationHelper {
     }
 
     /**
-     * Compute dashboard analytics
+     * Compute dashboard analytics with default base currency normalization
      */
     fun calculateStatistics(
         scholarships: List<Scholarship>,
-        requirements: List<ScholarshipRequirement>
-    ): ScholarshipStats = calculateScholarshipStats(scholarships, requirements)
+        requirements: List<ScholarshipRequirement>,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<com.example.data.ExchangeRate> = emptyList()
+    ): ScholarshipStats = calculateScholarshipStats(scholarships, requirements, defaultCurrency, exchangeRates)
 
     fun calculateScholarshipStats(
         scholarships: List<Scholarship>,
-        requirements: List<ScholarshipRequirement>
+        requirements: List<ScholarshipRequirement>,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<com.example.data.ExchangeRate> = emptyList()
     ): ScholarshipStats {
         val total = scholarships.size
         val active = scholarships.count { it.status in ScholarshipStatus.ACTIVE }
@@ -304,10 +308,26 @@ object ScholarshipCalculationHelper {
             s.deadlineDate != null && s.status in ScholarshipStatus.ACTIVE && getDaysDifference(s.deadlineDate) in 0..30
         }
 
-        val successRate = if (awaitingResults > 0) (awarded.toDouble() / awaitingResults.toDouble()) * 100.0 else 0.0
+        val completedApplications = awarded + rejected
+        val successRate = if (completedApplications > 0) (awarded.toDouble() / completedApplications.toDouble()) * 100.0 else 0.0
 
         val awardedFunding = calculateFundingByCurrency(scholarships, awardedOnly = true)
         val pipelineFunding = calculateFundingByCurrency(scholarships.filter { it.status in ScholarshipStatus.ACTIVE }, awardedOnly = false)
+
+        // Normalized multi-currency calculations
+        val normalizedAwarded = CurrencyConverter.calculateNormalizedFunding(
+            scholarships = scholarships,
+            targetCurrency = defaultCurrency,
+            rates = exchangeRates,
+            awardedOnly = true
+        )
+
+        val normalizedPipeline = CurrencyConverter.calculateNormalizedFunding(
+            scholarships = scholarships.filter { it.status in ScholarshipStatus.ACTIVE },
+            targetCurrency = defaultCurrency,
+            rates = exchangeRates,
+            awardedOnly = false
+        )
 
         return ScholarshipStats(
             total = total,
@@ -318,18 +338,25 @@ object ScholarshipCalculationHelper {
             rejected = rejected,
             successRate = successRate,
             awardedFunding = awardedFunding,
-            pipelineFunding = pipelineFunding
+            pipelineFunding = pipelineFunding,
+            normalizedAwardedFunding = normalizedAwarded.totalAmount,
+            normalizedPipelineFunding = normalizedPipeline.totalAmount,
+            baseCurrency = CurrencyConverter.normalizeCurrencyCode(defaultCurrency),
+            unconvertedAwardedCount = normalizedAwarded.unconvertedCount,
+            unconvertedAwardedCurrencies = normalizedAwarded.unconvertedCurrencies,
+            unconvertedPipelineCount = normalizedPipeline.unconvertedCount,
+            ratesUsedForAwarded = normalizedAwarded.ratesUsed
         )
     }
 
     /**
-     * Format currency amount (e.g. "₦1,500,000" or "$5,000")
+     * Format currency amount using centralized CurrencyConverter
      */
     fun formatCurrency(amount: Double, currency: String): String {
         return if (amount <= 0.0) {
             "Not specified"
         } else {
-            String.format(Locale.getDefault(), "%s %,.0f", currency, amount)
+            CurrencyConverter.format(amount, currency)
         }
     }
 }
@@ -388,7 +415,14 @@ data class ScholarshipStats(
     val rejected: Int,
     val successRate: Double,
     val awardedFunding: Map<String, Double>,
-    val pipelineFunding: Map<String, Double>
+    val pipelineFunding: Map<String, Double>,
+    val normalizedAwardedFunding: Double = 0.0,
+    val normalizedPipelineFunding: Double = 0.0,
+    val baseCurrency: String = "NGN",
+    val unconvertedAwardedCount: Int = 0,
+    val unconvertedAwardedCurrencies: List<String> = emptyList(),
+    val unconvertedPipelineCount: Int = 0,
+    val ratesUsedForAwarded: List<CurrencyConverter.RateUsageInfo> = emptyList()
 ) {
     val totalApplications: Int get() = total
     val activeApplications: Int get() = active
@@ -396,4 +430,10 @@ data class ScholarshipStats(
     val awaitingResultsCount: Int get() = awaitingResults
     val awardedCount: Int get() = awarded
     val totalAwardedFunds: Map<String, Double> get() = awardedFunding
+
+    val formattedAwardedFunding: String
+        get() = CurrencyConverter.format(normalizedAwardedFunding, baseCurrency)
+
+    val formattedPipelineFunding: String
+        get() = CurrencyConverter.format(normalizedPipelineFunding, baseCurrency)
 }

@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import com.example.data.ExchangeRate
 import com.example.data.RequirementCategory
 import com.example.data.RequirementStatus
 import com.example.data.Scholarship
@@ -59,7 +60,9 @@ object ScholarshipPdfGenerator {
         scholarships: List<Scholarship>,
         allRequirements: List<ScholarshipRequirement>,
         outputStream: OutputStream,
-        reportTitle: String = "ACTIVE SCHOLARSHIP APPLICATIONS REPORT"
+        reportTitle: String = "ACTIVE SCHOLARSHIP APPLICATIONS REPORT",
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<ExchangeRate> = emptyList()
     ) {
         val pdfDocument = PdfDocument()
         val pageWidth = A4_LANDSCAPE_WIDTH
@@ -204,7 +207,7 @@ object ScholarshipPdfGenerator {
         canvas.drawText("APPLICATION OVERVIEW & KEY METRICS", MARGIN_X, yPos, paintSectionHeading)
         yPos += 7f
 
-        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements)
+        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements, defaultCurrency, exchangeRates)
         val kpiCardWidth = (contentWidth - (5 * 10f)) / 6f
         val kpiCardHeight = 44f
 
@@ -214,9 +217,7 @@ object ScholarshipPdfGenerator {
             Triple("SUBMITTED", "${stats.awaitingResults}", "Awaiting Review"),
             Triple("AWARDED", "${stats.awarded}", if (stats.awarded > 0) "Won" else "0 Won"),
             Triple("REJECTED", "${stats.rejected}", "Declined"),
-            Triple("AWARDED SUM", if (stats.awardedFunding.isNotEmpty()) {
-                stats.awardedFunding.entries.joinToString(", ") { "${it.key}%,.0f".format(it.value) }
-            } else "—", "Total Funding")
+            Triple("AWARDED SUM", stats.formattedAwardedFunding, "Base: ${stats.baseCurrency}")
         )
 
         for (i in kpiItems.indices) {
@@ -234,11 +235,23 @@ object ScholarshipPdfGenerator {
                 "ACTIVE" -> Paint(paintValueBold).apply { color = COLOR_NAVY_ACCENT; textSize = 11f }
                 else -> Paint(paintValueBold).apply { textSize = 11f }
             }
-            canvas.drawText(kpiVal.take(14), cardX + 8f, yPos + 26f, valPaint)
+            canvas.drawText(kpiVal.take(16), cardX + 8f, yPos + 26f, valPaint)
             canvas.drawText(kpiSub, cardX + 8f, yPos + 38f, paintSubtitle)
         }
 
-        yPos += kpiCardHeight + 14f
+        yPos += kpiCardHeight + 6f
+
+        // Multi-currency disclaimer note
+        val currencyNote = buildString {
+            append("Funding totals normalized to ${stats.baseCurrency}. Converted values indicated by ≈ using local offline exchange rates.")
+            if (stats.ratesUsedForAwarded.isNotEmpty()) {
+                append(" (Rates: ")
+                append(stats.ratesUsedForAwarded.joinToString(", ") { "1 ${it.fromCurrency} = ${CurrencyConverter.formatRateValue(it.rate)} ${it.toCurrency}" })
+                append(")")
+            }
+        }
+        canvas.drawText(currencyNote.take(135), MARGIN_X, yPos + 6f, paintSubtitle)
+        yPos += 12f
 
         // --- SECTION 3: STATUS VISUALIZATION & UPCOMING DEADLINES (SIDE-BY-SIDE) ---
         val columnWidth = (contentWidth - 14f) / 2f
@@ -529,7 +542,21 @@ object ScholarshipPdfGenerator {
                 // Draw Col 6: Award (Clipped)
                 canvas.save()
                 canvas.clipRect(colStarts[6] + 1f, yPos + 1f, colStarts[6] + colWidths[6] - 1f, yPos + calculatedRowH - 1f)
-                val awardStr = if (scholarship.amount > 0) "${scholarship.currency}%,.0f".format(scholarship.amount) else "Unstated"
+                val origAmt = scholarship.effectiveAmount
+                val origCurr = scholarship.effectiveCurrency
+                val awardStr = if (origAmt > 0) {
+                    val origFormatted = CurrencyConverter.format(origAmt, origCurr)
+                    if (origCurr != defaultCurrency) {
+                        val conv = CurrencyConverter.convert(origAmt, origCurr, defaultCurrency, exchangeRates)
+                        if (conv is CurrencyConverter.ConversionResult.Success) {
+                            "$origFormatted (≈ ${CurrencyConverter.format(conv.convertedAmount, defaultCurrency)})"
+                        } else {
+                            origFormatted
+                        }
+                    } else {
+                        origFormatted
+                    }
+                } else "Unstated"
                 canvas.drawText(awardStr, colStarts[6] + 5f, yPos + 13f, paintTableTextBold)
                 canvas.restore()
 
@@ -646,7 +673,9 @@ object ScholarshipPdfGenerator {
         scholarship: Scholarship,
         requirements: List<ScholarshipRequirement>,
         timelineEvents: List<ScholarshipTimelineEvent>,
-        outputStream: OutputStream
+        outputStream: OutputStream,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<ExchangeRate> = emptyList()
     ) {
         generateSingleScholarshipPdf(
             student = student,
@@ -654,7 +683,9 @@ object ScholarshipPdfGenerator {
             scholarship = scholarship,
             requirements = requirements,
             timelineEvents = timelineEvents,
-            outputStream = outputStream
+            outputStream = outputStream,
+            defaultCurrency = defaultCurrency,
+            exchangeRates = exchangeRates
         )
     }
 
@@ -667,7 +698,9 @@ object ScholarshipPdfGenerator {
         scholarship: Scholarship,
         requirements: List<ScholarshipRequirement>,
         timelineEvents: List<ScholarshipTimelineEvent>,
-        outputStream: OutputStream
+        outputStream: OutputStream,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<ExchangeRate> = emptyList()
     ) {
         val pdfDocument = PdfDocument()
         val pageWidth = A4_LANDSCAPE_WIDTH
@@ -783,8 +816,10 @@ object ScholarshipPdfGenerator {
         canvas.drawText(orgLine, MARGIN_X + 12f, yPos + 34f, paintSubLight)
 
         // Award badge on the right
-        val awardText = if (scholarship.amount > 0) "${scholarship.currency}%,.2f".format(scholarship.amount) else "Unstated"
-        val awardPaint = Paint(paintTitleLight).apply { textSize = 12f }
+        val effAmt = scholarship.effectiveAmount
+        val effCurr = scholarship.effectiveCurrency
+        val awardText = if (effAmt > 0) CurrencyConverter.format(effAmt, effCurr) else "Unstated"
+        val awardPaint = Paint(paintTitleLight).apply { textSize = 11f }
         val awardWidth = awardPaint.measureText("Award: $awardText")
         canvas.drawText("Award: $awardText", pageWidth - MARGIN_X - 12f - awardWidth, yPos + 26f, awardPaint)
 
@@ -831,8 +866,23 @@ object ScholarshipPdfGenerator {
         drawParam("Min CGPA Req:", if (scholarship.minCgpa != null && scholarship.minCgpa > 0) "%.2f / %.1f".format(scholarship.minCgpa, student.gradingScale) else "None")
         drawParam("Eligibility Result:", "${eligibility.badgeText} (${eligibility.description})")
 
+        val origAmt = scholarship.effectiveAmount
+        val origCurr = scholarship.effectiveCurrency
+        if (origAmt > 0) {
+            val awStr = CurrencyConverter.format(origAmt, origCurr)
+            drawParam("Award Funding:", awStr)
+            if (origCurr != defaultCurrency) {
+                val conv = CurrencyConverter.convert(origAmt, origCurr, defaultCurrency, exchangeRates)
+                if (conv is CurrencyConverter.ConversionResult.Success) {
+                    drawParam("Converted Value:", "${CurrencyConverter.formatConverted(conv.convertedAmount, defaultCurrency)} (${conv.pairLabel})")
+                } else {
+                    drawParam("Converted Value:", "Rate to $defaultCurrency unconfigured")
+                }
+            }
+        }
+
         if (scholarship.awardAmount != null && scholarship.awardAmount > 0) {
-            val awStr = "${scholarship.awardCurrency ?: scholarship.currency}%,.2f".format(scholarship.awardAmount)
+            val awStr = CurrencyConverter.format(scholarship.awardAmount, scholarship.awardCurrency ?: scholarship.currency)
             drawParam("Disbursed Award:", awStr)
         }
         if (scholarship.notes.isNotBlank()) {

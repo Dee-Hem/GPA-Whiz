@@ -97,6 +97,59 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    // CURRENCY & EXCHANGE RATES STATE
+    private val currencyPrefs = application.getSharedPreferences("gpa_whiz_currency_prefs", Context.MODE_PRIVATE)
+    private val _defaultCurrency = MutableStateFlow(
+        currencyPrefs.getString("base_currency", "NGN")?.let { CurrencyConverter.normalizeCurrencyCode(it) } ?: "NGN"
+    )
+    val defaultCurrency: StateFlow<String> = _defaultCurrency.asStateFlow()
+
+    val exchangeRates: StateFlow<List<ExchangeRate>> = scholarshipDao.getAllExchangeRates()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun setDefaultCurrency(currency: String) {
+        val clean = CurrencyConverter.normalizeCurrencyCode(currency)
+        currencyPrefs.edit().putString("base_currency", clean).apply()
+        _defaultCurrency.value = clean
+        _uiMessage.value = "Default currency set to $clean (${CurrencyConverter.getCurrencyName(clean)})"
+    }
+
+    fun saveExchangeRate(from: String, to: String, rate: Double, source: String = "") {
+        val fromClean = CurrencyConverter.normalizeCurrencyCode(from)
+        val toClean = CurrencyConverter.normalizeCurrencyCode(to)
+        if (fromClean == toClean) {
+            _uiMessage.value = "From and To currencies cannot be the same ($fromClean)."
+            return
+        }
+        if (rate <= 0.0) {
+            _uiMessage.value = "Invalid rate. Exchange rate must be greater than zero."
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            val entry = ExchangeRate(
+                fromCurrency = fromClean,
+                toCurrency = toClean,
+                rate = rate,
+                sourceDescription = source.trim(),
+                lastUpdated = System.currentTimeMillis()
+            )
+            scholarshipDao.insertExchangeRate(entry)
+            _uiMessage.value = "Saved exchange rate: 1 $fromClean = ${CurrencyConverter.formatRateValue(rate)} $toClean"
+        }
+    }
+
+    fun deleteExchangeRate(rate: ExchangeRate) {
+        viewModelScope.launch(Dispatchers.IO) {
+            scholarshipDao.deleteExchangeRate(rate)
+            _uiMessage.value = "Deleted exchange rate ${rate.fromCurrency} → ${rate.toCurrency}."
+        }
+    }
+
     // UI Status Helpers
     private val _uiMessage = MutableStateFlow<String?>(null)
     val uiMessage = _uiMessage.asStateFlow()
@@ -578,7 +631,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 scholarships = list,
                 allRequirements = scholarshipRequirements.value,
                 outputStream = outputStream,
-                reportTitle = if (activeOnly) "ACTIVE SCHOLARSHIP APPLICATIONS REPORT" else "COMPLETE SCHOLARSHIP TRACKER REPORT"
+                reportTitle = if (activeOnly) "ACTIVE SCHOLARSHIP APPLICATIONS REPORT" else "COMPLETE SCHOLARSHIP TRACKER REPORT",
+                defaultCurrency = defaultCurrency.value,
+                exchangeRates = exchangeRates.value
             )
             _uiMessage.value = "Scholarship PDF report generated."
         } catch (e: Exception) {
@@ -597,7 +652,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 scholarship = scholarship,
                 requirements = reqs,
                 timelineEvents = events,
-                outputStream = outputStream
+                outputStream = outputStream,
+                defaultCurrency = defaultCurrency.value,
+                exchangeRates = exchangeRates.value
             )
             _uiMessage.value = "Dossier PDF exported."
         } catch (e: Exception) {
@@ -614,7 +671,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 scholarships = scholarships.value,
                 allRequirements = scholarshipRequirements.value,
                 allTimelineEvents = scholarshipTimelineEvents.value,
-                outputStream = outputStream
+                outputStream = outputStream,
+                defaultCurrency = defaultCurrency.value,
+                exchangeRates = exchangeRates.value
             )
             _uiMessage.value = "Scholarship Excel workbook (.xlsx) exported."
         } catch (e: Exception) {
@@ -633,7 +692,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 scholarship = scholarship,
                 requirements = reqs,
                 timelineEvents = events,
-                outputStream = outputStream
+                outputStream = outputStream,
+                defaultCurrency = defaultCurrency.value,
+                exchangeRates = exchangeRates.value
             )
             _uiMessage.value = "Scholarship Excel (.xlsx) exported."
         } catch (e: Exception) {

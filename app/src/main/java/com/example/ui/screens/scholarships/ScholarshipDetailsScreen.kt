@@ -46,6 +46,8 @@ fun ScholarshipDetailsScreen(
     val studentProfile by viewModel.studentProfile.collectAsState()
     val semesters by viewModel.semesters.collectAsState()
     val courses by viewModel.courses.collectAsState()
+    val defaultCurrency by viewModel.defaultCurrency.collectAsState()
+    val exchangeRates by viewModel.exchangeRates.collectAsState()
 
     val currentCgpa = remember(semesters, courses) {
         GpaCalcService.calculateCgpa(semesters, courses)
@@ -55,12 +57,7 @@ fun ScholarshipDetailsScreen(
 
     val scholarship = scholarships.find { it.id == scholarshipId }
 
-    // Add BackHandler to handle system back button
-    BackHandler {
-        onNavigateBack()
-    }
-    
-    // Add BackHandler to handle system back button
+    // Handle system back button
     BackHandler {
         onNavigateBack()
     }
@@ -355,13 +352,84 @@ fun ScholarshipDetailsScreen(
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Overview & Links", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
-                        // Funding Amount
-                        val amountText = if (scholarship.amount > 0) "${scholarship.currency} %,.0f".format(scholarship.amount) else "Unstated"
-                        Text(
-                            text = "Award Funding: $amountText",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        // Funding Amount (Preserves original currency and amount, with base conversion)
+                        val effAmt = scholarship.effectiveAmount
+                        val effCurr = scholarship.effectiveCurrency
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Award Value", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        text = if (effAmt > 0) CurrencyConverter.format(effAmt, effCurr) else "Unstated",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+
+                                if (effAmt > 0 && effCurr != defaultCurrency) {
+                                    val conv = CurrencyConverter.convert(effAmt, effCurr, defaultCurrency, exchangeRates)
+                                    when (conv) {
+                                        is CurrencyConverter.ConversionResult.Success -> {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Converted Base Value ($defaultCurrency)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Text(
+                                                    text = "≈ ${CurrencyConverter.format(conv.convertedAmount, defaultCurrency)}",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+                                            val rateDesc = if (conv.sourceDescription.isNotBlank()) " (${conv.sourceDescription})" else ""
+                                            Text(
+                                                text = "Rate: ${conv.pairLabel}$rateDesc as of ${CurrencyConverter.formatDate(conv.rateDate)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                        is CurrencyConverter.ConversionResult.RateMissing -> {
+                                            Text(
+                                                text = "Offline exchange rate for $effCurr to $defaultCurrency not configured (set in Settings > Currency Rates).",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                            )
+                                        }
+                                        else -> {}
+                                    }
+                                }
+
+                                if (scholarship.awardAmount != null && scholarship.awardAmount!! > 0) {
+                                    val finalCurr = scholarship.awardCurrency ?: effCurr
+                                    Divider(modifier = Modifier.padding(vertical = 2.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Disbursed Outcome", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = Color(0xFF0F9D58))
+                                        Text(
+                                            text = CurrencyConverter.format(scholarship.awardAmount!!, finalCurr),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF0F9D58)
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
                         if (scholarship.description.isNotBlank()) {
                             Text(

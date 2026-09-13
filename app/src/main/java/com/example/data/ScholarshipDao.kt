@@ -105,4 +105,17 @@ interface ScholarshipDao {
 
     @Query("DELETE FROM scholarship_reminders")
     suspend fun clearAllReminders()
+
+    // Exchange Rates
+    @Query("SELECT * FROM exchange_rates")
+    fun getAllExchangeRates(): Flow<List<ExchangeRate>>
+
+    @Query("SELECT * FROM exchange_rates WHERE fromCurrency = :from AND toCurrency = :to LIMIT 1")
+    suspend fun getExchangeRate(from: String, to: String): ExchangeRate?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExchangeRate(rate: ExchangeRate)
+
+    @Delete
+    suspend fun deleteExchangeRate(rate: ExchangeRate)
 }

@@ -22,6 +22,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import com.example.ui.screens.scholarships.CurrencySettingsSection
 import com.example.ui.viewmodel.GpaViewModel
 
 @Composable
@@ -30,6 +33,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val scrollState = rememberScrollState()
 
     // SAF launchers
     val createJsonLauncher = rememberLauncherForActivityResult(
@@ -82,9 +86,13 @@ fun SettingsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(scrollState)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Multi-Currency & Offline Exchange Rates Section
+        CurrencySettingsSection(viewModel = viewModel)
+
         Text(
             text = "TRANSCRIPT & TRANSFERS PORTABILITY",
             style = MaterialTheme.typography.titleMedium,

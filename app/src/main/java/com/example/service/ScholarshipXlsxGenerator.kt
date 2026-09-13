@@ -1,5 +1,6 @@
 package com.example.service
 
+import com.example.data.ExchangeRate
 import com.example.data.Scholarship
 import com.example.data.ScholarshipRequirement
 import com.example.data.ScholarshipStatus
@@ -31,7 +32,9 @@ object ScholarshipXlsxGenerator {
         scholarships: List<Scholarship>,
         allRequirements: List<ScholarshipRequirement>,
         allTimelineEvents: List<ScholarshipTimelineEvent>,
-        outputStream: OutputStream
+        outputStream: OutputStream,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<ExchangeRate> = emptyList()
     ) {
         val zip = ZipOutputStream(outputStream)
 
@@ -84,7 +87,7 @@ object ScholarshipXlsxGenerator {
         writeZipEntry(zip, "xl/styles.xml", stylesXml)
 
         // 6. Sheet 1: Scholarship Dashboard
-        val sheet1Xml = buildDashboardSheetXml(student, calculatedCgpa, scholarships, allRequirements)
+        val sheet1Xml = buildDashboardSheetXml(student, calculatedCgpa, scholarships, allRequirements, defaultCurrency, exchangeRates)
         writeZipEntry(zip, "xl/worksheets/sheet1.xml", sheet1Xml)
 
         // 7. Sheet 2: Requirements
@@ -96,7 +99,7 @@ object ScholarshipXlsxGenerator {
         writeZipEntry(zip, "xl/worksheets/sheet3.xml", sheet3Xml)
 
         // 9. Sheet 4: Summary
-        val sheet4Xml = buildSummarySheetXml(student, calculatedCgpa, scholarships, allRequirements)
+        val sheet4Xml = buildSummarySheetXml(student, calculatedCgpa, scholarships, allRequirements, defaultCurrency, exchangeRates)
         writeZipEntry(zip, "xl/worksheets/sheet4.xml", sheet4Xml)
 
         zip.finish()
@@ -111,7 +114,9 @@ object ScholarshipXlsxGenerator {
         scholarship: Scholarship,
         requirements: List<ScholarshipRequirement>,
         timelineEvents: List<ScholarshipTimelineEvent>,
-        outputStream: OutputStream
+        outputStream: OutputStream,
+        defaultCurrency: String = "NGN",
+        exchangeRates: List<ExchangeRate> = emptyList()
     ) {
         generateScholarshipWorkbook(
             student = student,
@@ -119,7 +124,9 @@ object ScholarshipXlsxGenerator {
             scholarships = listOf(scholarship),
             allRequirements = requirements,
             allTimelineEvents = timelineEvents,
-            outputStream = outputStream
+            outputStream = outputStream,
+            defaultCurrency = defaultCurrency,
+            exchangeRates = exchangeRates
         )
     }
 
@@ -211,7 +218,9 @@ object ScholarshipXlsxGenerator {
         student: StudentProfile,
         calculatedCgpa: Double,
         scholarships: List<Scholarship>,
-        allRequirements: List<ScholarshipRequirement>
+        allRequirements: List<ScholarshipRequirement>,
+        defaultCurrency: String,
+        exchangeRates: List<ExchangeRate>
     ): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -229,12 +238,16 @@ object ScholarshipXlsxGenerator {
     <col min="5" max="5" width="18" customWidth="1"/> <!-- Application Status -->
     <col min="6" max="6" width="22" customWidth="1"/> <!-- Requirements Progress -->
     <col min="7" max="7" width="16" customWidth="1"/> <!-- Award Amount -->
-    <col min="8" max="8" width="10" customWidth="1"/> <!-- Currency -->
-    <col min="9" max="9" width="15" customWidth="1"/> <!-- Date Applied -->
-    <col min="10" max="10" width="18" customWidth="1"/> <!-- Expected Feedback -->
-    <col min="11" max="11" width="14" customWidth="1"/> <!-- Result -->
-    <col min="12" max="12" width="32" customWidth="1"/> <!-- Notes -->
-    <col min="13" max="13" width="35" customWidth="1"/> <!-- Application URL -->
+    <col min="8" max="8" width="12" customWidth="1"/> <!-- Award Currency -->
+    <col min="9" max="9" width="20" customWidth="1"/> <!-- Converted Amount -->
+    <col min="10" max="10" width="14" customWidth="1"/> <!-- Base Currency -->
+    <col min="11" max="11" width="16" customWidth="1"/> <!-- Conversion Rate -->
+    <col min="12" max="12" width="16" customWidth="1"/> <!-- Rate Date -->
+    <col min="13" max="13" width="15" customWidth="1"/> <!-- Date Applied -->
+    <col min="14" max="14" width="18" customWidth="1"/> <!-- Expected Feedback -->
+    <col min="15" max="15" width="14" customWidth="1"/> <!-- Result -->
+    <col min="16" max="16" width="32" customWidth="1"/> <!-- Notes -->
+    <col min="17" max="17" width="35" customWidth="1"/> <!-- Application URL -->
   </cols>
   <sheetData>
 """)
@@ -293,7 +306,7 @@ object ScholarshipXlsxGenerator {
     </row>
 """)
 
-        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements)
+        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements, defaultCurrency, exchangeRates)
 
         sb.append("""    <row r="9">
       <c r="A9" s="8" t="inlineStr"><is><t>Total Tracked Scholarships</t></is></c>
@@ -312,27 +325,35 @@ object ScholarshipXlsxGenerator {
       <c r="F10" s="7"><v>${stats.rejected}</v></c>
     </row>
     <row r="11">
-      <c r="A11" s="9" t="inlineStr"><is><t>Total Awarded Funding:</t></is></c>
-      <c r="B11" s="7" t="inlineStr"><is><t>${if (stats.awardedFunding.isNotEmpty()) stats.awardedFunding.entries.joinToString(", ") { "${it.key}%,.0f".format(it.value) } else "None"}</t></is></c>
+      <c r="A11" s="9" t="inlineStr"><is><t>Total Awarded Funding (Normalized):</t></is></c>
+      <c r="B11" s="7" t="inlineStr"><is><t>${stats.formattedAwardedFunding}</t></is></c>
       <c r="C11" s="9" t="inlineStr"><is><t>Success Rate:</t></is></c>
       <c r="D11" s="7" t="inlineStr"><is><t>${"%.1f%%".format(stats.successRate)}</t></is></c>
       <c r="E11" s="9" t="inlineStr"><is><t>Upcoming Deadlines (30d):</t></is></c>
       <c r="F11" s="7"><v>${stats.upcomingDeadlines}</v></c>
     </row>
-    <row r="12"/>
+    <row r="12">
+      <c r="A12" s="9" t="inlineStr"><is><t>Base Reporting Currency:</t></is></c>
+      <c r="B12" s="6" t="inlineStr"><is><t>${stats.baseCurrency}</t></is></c>
+      <c r="C12" s="9" t="inlineStr"><is><t>Foreign Currency Awards:</t></is></c>
+      <c r="D12" s="6" t="inlineStr"><is><t>${scholarships.count { it.status == ScholarshipStatus.AWARDED && it.effectiveCurrency != stats.baseCurrency }}</t></is></c>
+      <c r="E12" s="9" t="inlineStr"><is><t>Conversion Engine:</t></is></c>
+      <c r="F12" s="6" t="inlineStr"><is><t>100% Offline Benchmark Rates</t></is></c>
+    </row>
     <row r="13"/>
     <row r="14">
       <c r="A14" s="4" t="inlineStr"><is><t>MAIN SCHOLARSHIP TABLE</t></is></c>
     </row>
     <row r="15">
-      <c r="A15" s="3" t="inlineStr"><is><t>Use Excel filter headers to search, sort, and organize applications</t></is></c>
+      <c r="A15" s="3" t="inlineStr"><is><t>Structured multi-currency table: original values preserved; converted values normalized to $defaultCurrency</t></is></c>
     </row>
 """)
 
-        // Row 16: Table Headers (13 Columns)
+        // Row 16: Table Headers (17 Columns)
         val headers = listOf(
             "Scholarship Name", "Organization", "Deadline", "Days Remaining",
-            "Application Status", "Requirements Progress", "Award Amount", "Currency",
+            "Application Status", "Requirements Progress", "Award Amount", "Award Currency",
+            "Converted Amount (≈)", "Base Currency", "Conversion Rate", "Rate Date",
             "Date Applied", "Expected Feedback", "Result", "Notes", "Application URL"
         )
 
@@ -352,6 +373,9 @@ object ScholarshipXlsxGenerator {
             val progressStr = "${progress.completed}/${progress.total} (${progress.percentage.toInt()}%)"
             val resultStr = s.outcome ?: if (s.status == ScholarshipStatus.AWARDED) "Awarded" else if (s.status == ScholarshipStatus.REJECTED) "Rejected" else "Pending"
 
+            val origAmt = s.effectiveAmount
+            val origCurr = s.effectiveCurrency
+
             sb.append("    <row r=\"$rowIdx\">\n")
             // A: Name
             sb.append("      <c r=\"A$rowIdx\" s=\"7\" t=\"inlineStr\"><is><t>${escapeXml(s.name)}</t></is></c>\n")
@@ -365,27 +389,60 @@ object ScholarshipXlsxGenerator {
             sb.append("      <c r=\"E$rowIdx\" s=\"7\" t=\"inlineStr\"><is><t>${escapeXml(s.status)}</t></is></c>\n")
             // F: Requirements Progress
             sb.append("      <c r=\"F$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(progressStr)}</t></is></c>\n")
-            // G: Award Amount
-            if (s.amount > 0) {
-                sb.append("      <c r=\"G$rowIdx\" s=\"6\"><v>${s.amount}</v></c>\n")
+
+            // G: Award Amount (original)
+            if (origAmt > 0) {
+                sb.append("      <c r=\"G$rowIdx\" s=\"6\"><v>$origAmt</v></c>\n")
             } else {
                 sb.append("      <c r=\"G$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
             }
-            // H: Currency
-            sb.append("      <c r=\"H$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(s.currency)}</t></is></c>\n")
-            // I: Date Applied
-            sb.append("      <c r=\"I$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(ScholarshipCalculationHelper.formatShortDate(s.dateApplied))}</t></is></c>\n")
-            // J: Expected Feedback
-            sb.append("      <c r=\"J$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(ScholarshipCalculationHelper.formatShortDate(s.expectedFeedbackDate))}</t></is></c>\n")
-            // K: Result
-            sb.append("      <c r=\"K$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(resultStr)}</t></is></c>\n")
-            // L: Notes
-            sb.append("      <c r=\"L$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(s.notes)}</t></is></c>\n")
-            // M: Application URL
-            if (s.applicationUrl.isNotBlank()) {
-                sb.append("      <c r=\"M$rowIdx\" s=\"10\" t=\"inlineStr\"><is><t>${escapeXml(s.applicationUrl)}</t></is></c>\n")
+
+            // H: Award Currency (original)
+            sb.append("      <c r=\"H$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(origCurr)}</t></is></c>\n")
+
+            // I: Converted Amount (normalized into baseCurrency)
+            // K: Conversion Rate
+            // L: Rate Date
+            if (origAmt > 0) {
+                if (origCurr == defaultCurrency) {
+                    sb.append("      <c r=\"I$rowIdx\" s=\"6\"><v>$origAmt</v></c>\n")
+                    sb.append("      <c r=\"J$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(defaultCurrency)}</t></is></c>\n")
+                    sb.append("      <c r=\"K$rowIdx\" s=\"6\"><v>1.0</v></c>\n")
+                    sb.append("      <c r=\"L$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>Direct</t></is></c>\n")
+                } else {
+                    val conv = CurrencyConverter.convert(origAmt, origCurr, defaultCurrency, exchangeRates)
+                    if (conv is CurrencyConverter.ConversionResult.Success) {
+                        sb.append("      <c r=\"I$rowIdx\" s=\"6\"><v>${conv.convertedAmount}</v></c>\n")
+                        sb.append("      <c r=\"J$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(defaultCurrency)}</t></is></c>\n")
+                        sb.append("      <c r=\"K$rowIdx\" s=\"6\"><v>${conv.rateUsed}</v></c>\n")
+                        sb.append("      <c r=\"L$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(CurrencyConverter.formatDate(conv.rateDate))}</t></is></c>\n")
+                    } else {
+                        sb.append("      <c r=\"I$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>Unrated</t></is></c>\n")
+                        sb.append("      <c r=\"J$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(defaultCurrency)}</t></is></c>\n")
+                        sb.append("      <c r=\"K$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>Rate Missing</t></is></c>\n")
+                        sb.append("      <c r=\"L$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>N/A</t></is></c>\n")
+                    }
+                }
             } else {
-                sb.append("      <c r=\"M$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
+                sb.append("      <c r=\"I$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
+                sb.append("      <c r=\"J$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(defaultCurrency)}</t></is></c>\n")
+                sb.append("      <c r=\"K$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
+                sb.append("      <c r=\"L$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
+            }
+
+            // M: Date Applied
+            sb.append("      <c r=\"M$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(ScholarshipCalculationHelper.formatShortDate(s.dateApplied))}</t></is></c>\n")
+            // N: Expected Feedback
+            sb.append("      <c r=\"N$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(ScholarshipCalculationHelper.formatShortDate(s.expectedFeedbackDate))}</t></is></c>\n")
+            // O: Result
+            sb.append("      <c r=\"O$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(resultStr)}</t></is></c>\n")
+            // P: Notes
+            sb.append("      <c r=\"P$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(s.notes)}</t></is></c>\n")
+            // Q: Application URL
+            if (s.applicationUrl.isNotBlank()) {
+                sb.append("      <c r=\"Q$rowIdx\" s=\"10\" t=\"inlineStr\"><is><t>${escapeXml(s.applicationUrl)}</t></is></c>\n")
+            } else {
+                sb.append("      <c r=\"Q$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>—</t></is></c>\n")
             }
             sb.append("    </row>\n")
             rowIdx++
@@ -393,7 +450,7 @@ object ScholarshipXlsxGenerator {
 
         val lastRow = if (rowIdx > 17) rowIdx - 1 else 17
         sb.append("""  </sheetData>
-  <autoFilter ref="A16:M$lastRow"/>
+  <autoFilter ref="A16:Q$lastRow"/>
 </worksheet>""")
         return sb.toString()
     }
@@ -530,15 +587,17 @@ object ScholarshipXlsxGenerator {
         student: StudentProfile,
         calculatedCgpa: Double,
         scholarships: List<Scholarship>,
-        allRequirements: List<ScholarshipRequirement>
+        allRequirements: List<ScholarshipRequirement>,
+        defaultCurrency: String,
+        exchangeRates: List<ExchangeRate>
     ): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <cols>
     <col min="1" max="1" width="28" customWidth="1"/>
-    <col min="2" max="2" width="18" customWidth="1"/>
-    <col min="3" max="3" width="18" customWidth="1"/>
+    <col min="2" max="2" width="22" customWidth="1"/>
+    <col min="3" max="3" width="22" customWidth="1"/>
     <col min="4" max="4" width="28" customWidth="1"/>
     <col min="5" max="5" width="22" customWidth="1"/>
   </cols>
@@ -601,9 +660,9 @@ object ScholarshipXlsxGenerator {
 """)
         rowIdx += 2
 
-        // Financial Breakdown
+        // Financial Breakdown by Original Currency
         sb.append("""    <row r="$rowIdx">
-      <c r="A$rowIdx" s="4" t="inlineStr"><is><t>FUNDING BREAKDOWN BY CURRENCY</t></is></c>
+      <c r="A$rowIdx" s="4" t="inlineStr"><is><t>ORIGINAL FUNDING BREAKDOWN BY CURRENCY</t></is></c>
     </row>
 """)
         rowIdx++
@@ -617,7 +676,7 @@ object ScholarshipXlsxGenerator {
 
         val awardedByCurrency = ScholarshipCalculationHelper.calculateFundingByCurrency(scholarships, awardedOnly = true)
         val pipelineByCurrency = ScholarshipCalculationHelper.calculateFundingByCurrency(scholarships.filter { it.status in ScholarshipStatus.ACTIVE }, awardedOnly = false)
-        val allCurrencies = (awardedByCurrency.keys + pipelineByCurrency.keys).distinct().ifEmpty { listOf("₦") }
+        val allCurrencies = (awardedByCurrency.keys + pipelineByCurrency.keys).distinct().ifEmpty { listOf(defaultCurrency) }
 
         for (curr in allCurrencies) {
             val awardedAmt = awardedByCurrency[curr] ?: 0.0
@@ -632,21 +691,57 @@ object ScholarshipXlsxGenerator {
         }
 
         rowIdx++
-        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements)
+        val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements, defaultCurrency, exchangeRates)
         sb.append("""    <row r="$rowIdx">
       <c r="A$rowIdx" s="4" t="inlineStr"><is><t>KEY PERFORMANCE INDICATORS</t></is></c>
     </row>
 """)
         rowIdx++
         sb.append("""    <row r="$rowIdx">
-      <c r="A$rowIdx" s="8" t="inlineStr"><is><t>Success Rate (Awarded / Completed):</t></is></c>
-      <c r="B$rowIdx" s="7" t="inlineStr"><is><t>%.1f%%</t></is></c>
+      <c r="A$rowIdx" s="8" t="inlineStr"><is><t>Normalized Total Awarded:</t></is></c>
+      <c r="B$rowIdx" s="7" t="inlineStr"><is><t>${stats.formattedAwardedFunding}</t></is></c>
     </row>
     <row r="${rowIdx + 1}">
-      <c r="A${rowIdx + 1}" s="8" t="inlineStr"><is><t>Active Application Rate:</t></is></c>
-      <c r="B${rowIdx + 1}" s="7" t="inlineStr"><is><t>${if (totalCount > 0) "%.1f%%".format((stats.active.toDouble() / totalCount.toDouble()) * 100.0) else "0.0%"}</t></is></c>
+      <c r="A${rowIdx + 1}" s="8" t="inlineStr"><is><t>Base Reporting Currency:</t></is></c>
+      <c r="B${rowIdx + 1}" s="6" t="inlineStr"><is><t>${stats.baseCurrency}</t></is></c>
+    </row>
+    <row r="${rowIdx + 2}">
+      <c r="A${rowIdx + 2}" s="8" t="inlineStr"><is><t>Success Rate (Awarded / Submitted):</t></is></c>
+      <c r="B${rowIdx + 2}" s="7" t="inlineStr"><is><t>${"%.1f%%".format(stats.successRate)}</t></is></c>
+    </row>
+    <row r="${rowIdx + 3}">
+      <c r="A${rowIdx + 3}" s="8" t="inlineStr"><is><t>Active Application Rate:</t></is></c>
+      <c r="B${rowIdx + 3}" s="7" t="inlineStr"><is><t>${if (totalCount > 0) "%.1f%%".format((stats.active.toDouble() / totalCount.toDouble()) * 100.0) else "0.0%"}</t></is></c>
     </row>
 """)
+        rowIdx += 5
+
+        // Offline Exchange Rate Table
+        val ratesToShow = if (exchangeRates.isNotEmpty()) exchangeRates else CurrencyConverter.DEFAULT_RATES
+        sb.append("""    <row r="$rowIdx">
+      <c r="A$rowIdx" s="4" t="inlineStr"><is><t>OFFLINE EXCHANGE RATES TABLE</t></is></c>
+    </row>
+""")
+        rowIdx++
+        sb.append("""    <row r="$rowIdx">
+      <c r="A$rowIdx" s="5" t="inlineStr"><is><t>From Currency</t></is></c>
+      <c r="B$rowIdx" s="5" t="inlineStr"><is><t>To Currency</t></is></c>
+      <c r="C$rowIdx" s="5" t="inlineStr"><is><t>Exchange Rate</t></is></c>
+      <c r="D$rowIdx" s="5" t="inlineStr"><is><t>Benchmark Description / Source</t></is></c>
+      <c r="E$rowIdx" s="5" t="inlineStr"><is><t>Rate Date</t></is></c>
+    </row>
+""")
+        rowIdx++
+        for (rate in ratesToShow) {
+            sb.append("    <row r=\"$rowIdx\">\n")
+            sb.append("      <c r=\"A$rowIdx\" s=\"7\" t=\"inlineStr\"><is><t>${escapeXml(rate.fromCurrency)}</t></is></c>\n")
+            sb.append("      <c r=\"B$rowIdx\" s=\"7\" t=\"inlineStr\"><is><t>${escapeXml(rate.toCurrency)}</t></is></c>\n")
+            sb.append("      <c r=\"C$rowIdx\" s=\"6\"><v>${rate.rate}</v></c>\n")
+            sb.append("      <c r=\"D$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(rate.sourceDescription)}</t></is></c>\n")
+            sb.append("      <c r=\"E$rowIdx\" s=\"6\" t=\"inlineStr\"><is><t>${escapeXml(CurrencyConverter.formatDate(rate.lastUpdated))}</t></is></c>\n")
+            sb.append("    </row>\n")
+            rowIdx++
+        }
 
         sb.append("""  </sheetData>
 </worksheet>""")

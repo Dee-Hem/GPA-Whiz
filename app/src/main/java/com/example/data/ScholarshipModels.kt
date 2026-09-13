@@ -12,7 +12,7 @@ data class Scholarship(
     val organization: String,
     val description: String = "",
     val amount: Double = 0.0,
-    val currency: String = "₦", // Default Naira, supports $, £, €, CAD, etc.
+    val currency: String = "NGN", // Updated to default to NGN
     val applicationUrl: String = "",
     val organizationWebsite: String = "",
     val contactEmail: String = "",
@@ -33,6 +33,28 @@ data class Scholarship(
     val awardNotes: String? = null,
     val dateAdded: Long = System.currentTimeMillis(),
     val dateApplied: Long? = null
+) {
+    val effectiveAmount: Double get() = if ((awardAmount ?: 0.0) > 0.0) (awardAmount ?: 0.0) else amount
+    val effectiveCurrency: String get() = normalizeCode(awardCurrency?.ifBlank { null } ?: currency)
+
+    companion object {
+        fun normalizeCode(code: String?): String {
+            if (code.isNullOrBlank() || code == "₦") return "NGN"
+            if (code == "$") return "USD"
+            if (code == "£") return "GBP"
+            if (code == "€") return "EUR"
+            return code.trim().uppercase()
+        }
+    }
+}
+
+@Entity(tableName = "exchange_rates", primaryKeys = ["fromCurrency", "toCurrency"])
+data class ExchangeRate(
+    val fromCurrency: String,
+    val toCurrency: String,
+    val rate: Double,
+    val sourceDescription: String = "",
+    val lastUpdated: Long = System.currentTimeMillis()
 )
 
 @Entity(

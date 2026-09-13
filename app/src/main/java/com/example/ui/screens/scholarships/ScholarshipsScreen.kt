@@ -43,6 +43,8 @@ fun ScholarshipsScreen(
     val studentProfile by viewModel.studentProfile.collectAsState()
     val semesters by viewModel.semesters.collectAsState()
     val courses by viewModel.courses.collectAsState()
+    val defaultCurrency by viewModel.defaultCurrency.collectAsState()
+    val exchangeRates by viewModel.exchangeRates.collectAsState()
 
     val currentCgpa = remember(semesters, courses) {
         GpaCalcService.calculateCgpa(semesters, courses)
@@ -59,8 +61,8 @@ fun ScholarshipsScreen(
     var showExportDialog by remember { mutableStateOf(false) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
 
-    val stats = remember(scholarships, allRequirements) {
-        ScholarshipCalculationHelper.calculateStatistics(scholarships, allRequirements)
+    val stats = remember(scholarships, allRequirements, defaultCurrency, exchangeRates) {
+        ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements, defaultCurrency, exchangeRates)
     }
 
     // Filter & Sort
@@ -148,35 +150,32 @@ fun ScholarshipsScreen(
             item {
                 KpiCard(
                     title = "Active Applications",
-                    value = stats.activeApplications.toString(),
-                    subtext = "of ${stats.totalApplications} total tracked",
+                    value = stats.active.toString(),
+                    subtext = "of ${stats.total} total tracked",
                     color = MaterialTheme.colorScheme.primary
                 )
             }
             item {
                 KpiCard(
                     title = "Deadlines in 30d",
-                    value = stats.upcomingDeadlinesCount.toString(),
+                    value = stats.upcomingDeadlines.toString(),
                     subtext = "require urgent action",
-                    color = if (stats.upcomingDeadlinesCount > 0) Color(0xFFDB4437) else Color(0xFF0F9D58)
+                    color = if (stats.upcomingDeadlines > 0) Color(0xFFDB4437) else Color(0xFF0F9D58)
                 )
             }
             item {
                 KpiCard(
                     title = "Awaiting Feedback",
-                    value = stats.awaitingResultsCount.toString(),
+                    value = stats.awaitingResults.toString(),
                     subtext = "submitted applications",
                     color = Color(0xFF1A73E8)
                 )
             }
             item {
-                val totalAwardedFormatted = if (stats.totalAwardedFunds.isNotEmpty()) {
-                    stats.totalAwardedFunds.entries.joinToString(", ") { "${it.key}%,.0f".format(it.value) }
-                } else "0"
                 KpiCard(
                     title = "Awarded / Success",
-                    value = "${stats.awardedCount} (${"%.1f%%".format(stats.successRate)})",
-                    subtext = "Funds: $totalAwardedFormatted",
+                    value = "${stats.awarded} (${"%.1f%%".format(stats.successRate)})",
+                    subtext = "Total: ${stats.formattedAwardedFunding}",
                     color = Color(0xFF0F9D58)
                 )
             }
@@ -286,6 +285,8 @@ fun ScholarshipsScreen(
                                 currentCgpa = effectiveCgpa,
                                 gradingScale = studentProfile.gradingScale,
                                 isTarget = isTargetCgpa,
+                                defaultCurrency = defaultCurrency,
+                                exchangeRates = exchangeRates,
                                 onClick = { onSelectScholarship(item.id) },
                                 onOpenUrl = { openUrl(context, item.applicationUrl) }
                             )
@@ -402,6 +403,8 @@ fun ScholarshipCard(
     currentCgpa: Double,
     gradingScale: Double,
     isTarget: Boolean = false,
+    defaultCurrency: String = "NGN",
+    exchangeRates: List<ExchangeRate> = emptyList(),
     onClick: () -> Unit,
     onOpenUrl: () -> Unit
 ) {
@@ -469,7 +472,22 @@ fun ScholarshipCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                val amtStr = if (scholarship.amount > 0) "${scholarship.currency} %,.0f".format(scholarship.amount) else "Unstated"
+                val effAmt = scholarship.effectiveAmount
+                val effCurr = scholarship.effectiveCurrency
+                val amtStr = if (effAmt > 0) {
+                    val origStr = CurrencyConverter.format(effAmt, effCurr)
+                    if (effCurr != defaultCurrency) {
+                        val conv = CurrencyConverter.convert(effAmt, effCurr, defaultCurrency, exchangeRates)
+                        if (conv is CurrencyConverter.ConversionResult.Success) {
+                            "$origStr (≈ ${CurrencyConverter.format(conv.convertedAmount, defaultCurrency)})"
+                        } else {
+                            origStr
+                        }
+                    } else {
+                        origStr
+                    }
+                } else "Unstated"
+
                 Text(
                     text = "Funding: $amtStr",
                     style = MaterialTheme.typography.bodySmall,
