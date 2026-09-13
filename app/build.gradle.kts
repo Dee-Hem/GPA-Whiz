@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-  namespace = "com.example"
+  namespace = "com.deehem.gpawhiz"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
-    applicationId = "com.aistudio.gpawizard.kxbpdh"
+    applicationId = "com.deehem.gpawhiz"
     minSdk = 24
     targetSdk = 36
     versionCode = 1
