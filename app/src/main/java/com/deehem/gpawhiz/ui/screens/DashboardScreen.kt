@@ -558,23 +558,53 @@ fun ProfileForm(
             }
 
             // Grading Scale Toggle
-            Row(
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Text(text = "Grading Scale Map", fontWeight = FontWeight.Medium)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     FilterChip(
                         selected = scale == 5.0,
                         onClick = { scale = 5.0 },
-                        label = { Text("5.0 Scale (Univ)") }
+                        label = { Text("5.0 Scale (Univ)", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                        modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = scale == 4.0,
                         onClick = { scale = 4.0 },
-                        label = { Text("4.0 Scale (Poly/Univ)") }
+                        label = { Text("4.0 Scale (Poly/Univ)", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                        modifier = Modifier.weight(1f)
                     )
+                }
+
+                // Detailed Grading Mapping Content (Fixed missing section)
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val grades = if (scale == 5.0) {
+                            listOf("A" to "5", "B" to "4", "C" to "3", "D" to "2", "E" to "1", "F" to "0")
+                        } else {
+                            listOf("A" to "4", "B" to "3", "C" to "2", "D" to "1", "F" to "0")
+                        }
+
+                        grades.forEach { (grade, points) ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = grade, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                                Text(text = points, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
                 }
             }
 
