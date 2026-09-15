@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,8 +29,36 @@ import com.deehem.gpawhiz.ui.screens.scholarships.CurrencySettingsSection
 import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
 
 @Composable
+fun ThemeOptionButton(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(containerColor)
+            .clickable { onClick() }
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = label,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelMedium,
+            color = contentColor
+        )
+    }
+}
+
+@Composable
 fun SettingsScreen(
     viewModel: GpaViewModel,
+    onNavigateToAssistant: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -90,8 +119,136 @@ fun SettingsScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Text(
+            text = "DISPLAY & APPEARANCE",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        val themeMode by viewModel.themeMode.collectAsState()
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Application Theme",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Choose between Light, Dark or System Default",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    ThemeOptionButton(
+                        label = "System",
+                        isSelected = themeMode == 0,
+                        onClick = { viewModel.setThemeMode(0) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ThemeOptionButton(
+                        label = "Light",
+                        isSelected = themeMode == 1,
+                        onClick = { viewModel.setThemeMode(1) },
+                        modifier = Modifier.weight(1f)
+                    )
+                    ThemeOptionButton(
+                        label = "Dark",
+                        isSelected = themeMode == 2,
+                        onClick = { viewModel.setThemeMode(2) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+
         // Multi-Currency & Offline Exchange Rates Section
         CurrencySettingsSection(viewModel = viewModel)
+
+        Text(
+            text = "ACADEMIC UTILITIES & TOOLS",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Build,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Academic Assistant",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "GPA scale converters and percentage mapping",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Button(
+                    onClick = onNavigateToAssistant,
+                    modifier = Modifier.fillMaxWidth().testTag("open_academic_assistant_settings_button")
+                ) {
+                    Text("Launch Academic Converters")
+                }
+            }
+        }
 
         Text(
             text = "TRANSCRIPT & TRANSFERS PORTABILITY",
@@ -121,12 +278,12 @@ fun SettingsScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFEBF5FF))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
                     ) {
                         Icon(
                             imageVector = Icons.Default.Info, // Use info for docs
                             contentDescription = null,
-                            tint = Color(0xFF1C64F2),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.align(Alignment.Center)
                         )
                     }
@@ -176,12 +333,12 @@ fun SettingsScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFE8F5E9))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f))
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
                             contentDescription = null,
-                            tint = Color(0xFF2E7D32),
+                            tint = MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.align(Alignment.Center)
                         )
                     }
@@ -203,7 +360,7 @@ fun SettingsScreen(
 
                 Button(
                     onClick = { showScholarshipExportDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                     modifier = Modifier.fillMaxWidth().testTag("export_scholarships_settings_button")
                 ) {
                     Text("Export Scholarship PDF / Excel")
@@ -235,12 +392,12 @@ fun SettingsScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFFF3F4F6))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = null,
-                            tint = Color(0xFF4B5563),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.align(Alignment.Center)
                         )
                     }

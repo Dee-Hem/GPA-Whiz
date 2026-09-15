@@ -11,11 +11,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +37,8 @@ import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
 fun DashboardScreen(
     viewModel: GpaViewModel,
     onNavigateToScholarships: () -> Unit = {},
+    onNavigateToAssistant: () -> Unit = {},
+    onNavigateToStudyPlanner: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val profile by viewModel.studentProfile.collectAsState()
@@ -66,6 +70,30 @@ fun DashboardScreen(
 
     val scholarshipStats = remember(scholarships, scholarshipReqs) {
         com.deehem.gpawhiz.service.ScholarshipCalculationHelper.calculateStatistics(scholarships, scholarshipReqs)
+    }
+
+    val creditsCompleted = remember(courses) {
+        GpaCalcService.calculateCreditsCompleted(courses)
+    }
+    
+    val currentSemester = remember(semesters, profile) {
+        semesters.find { it.id == profile.currentSemesterId }
+    }
+    
+    val currentSemesterCourses = remember(courses, profile) {
+        courses.filter { it.semesterId == profile.currentSemesterId }
+    }
+    
+    val currentSemesterGpa = remember(currentSemesterCourses, currentSemester) {
+        GpaCalcService.calculateSgpa(currentSemesterCourses, currentSemester?.gradingScale ?: profile.gradingScale)
+    }
+    
+    val currentSemesterCredits = remember(currentSemesterCourses) {
+        currentSemesterCourses.sumOf { it.units }
+    }
+    
+    val progress = remember(creditsCompleted, profile) {
+        if (profile.totalRequiredCredits > 0) (creditsCompleted.toFloat() / profile.totalRequiredCredits).coerceIn(0f, 1f) else 0f
     }
 
     // Toggle for Profile Editing
@@ -140,10 +168,47 @@ fun DashboardScreen(
             }
         }
 
+        // Current Semester Indicator
+        if (profile.academicSession.isNotEmpty() || currentSemester != null) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.2f))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "CURRENT SEMESTER",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = "${profile.academicSession.ifEmpty { "Active Session" }} • ${currentSemester?.name ?: "No Semester Selected"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
         // Profile Editor Form (collapsible)
         AnimatedVisibility(visible = isEditingProfile) {
             ProfileForm(
                 profile = profile,
+                semesters = semesters,
                 onSave = { updatedProfile ->
                     viewModel.updateProfile(
                         name = updatedProfile.fullName,
@@ -152,9 +217,12 @@ fun DashboardScreen(
                         faculty = updatedProfile.faculty,
                         dept = updatedProfile.department,
                         level = updatedProfile.currentLevel,
+                        session = updatedProfile.academicSession,
+                        semesterId = updatedProfile.currentSemesterId,
                         gradYear = updatedProfile.graduationYear,
                         scale = updatedProfile.gradingScale,
-                        targetCgpa = updatedProfile.targetCgpa
+                        targetCgpa = updatedProfile.targetCgpa,
+                        totalRequiredCredits = updatedProfile.totalRequiredCredits
                     )
                     isEditingProfile = false
                 }
@@ -176,7 +244,7 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "CURRENT STATUS",
+                    text = "OVERALL CGPA",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = themeColor,
@@ -206,7 +274,7 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "$totalUnits Units Completed",
+                        text = "$creditsCompleted / ${profile.totalRequiredCredits} Credits",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = themeColor.copy(alpha = 0.8f)
@@ -217,11 +285,68 @@ fun DashboardScreen(
                             .background(themeColor.copy(alpha = 0.4f), CircleShape)
                     )
                     Text(
-                        text = if (profile.currentLevel.isNotEmpty()) profile.currentLevel else "Active",
+                        text = "${(progress * 100).toInt()}% Progress",
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = themeColor.copy(alpha = 0.8f)
                     )
+                }
+            }
+        }
+
+        // Academic Foundation & Credit tracking
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "ACADEMIC FOUNDATION",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
+                
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Semester GPA
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Term GPA", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text("%.2f".format(currentSemesterGpa), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, softWrap = false)
+                    }
+                    // Semester Credits
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Term Units", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text("$currentSemesterCredits", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, softWrap = false)
+                    }
+                    // Course Count
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Courses", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Text("${currentSemesterCourses.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, softWrap = false)
+                    }
+                }
+                
+                HorizontalDivider(modifier = Modifier.alpha(0.3f))
+                
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Credit Progress", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        Text("$creditsCompleted / ${profile.totalRequiredCredits} Units", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
+                    
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("${(progress * 100).toInt()}% Completed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text("${profile.totalRequiredCredits - creditsCompleted} Units Remaining", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -287,7 +412,7 @@ fun DashboardScreen(
                     // Target achievements progress pointer
                     val targetProgress = if (profile.targetCgpa > 0) (cgpa / profile.targetCgpa).toFloat().coerceIn(0f, 1f) else 0f
                     LinearProgressIndicator(
-                        progress = targetProgress,
+                        progress = { targetProgress },
                         color = if (targetProgress >= 0.95f) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary,
                         trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp))
@@ -300,8 +425,8 @@ fun DashboardScreen(
         AnimatedVisibility(visible = carryOvers.isNotEmpty()) {
             Card(
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFDF2F2)), // Off-red background
-                modifier = Modifier.fillMaxWidth().border(1.dp, Color(0xFFF8B4B4), RoundedCornerShape(16.dp))
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(16.dp))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -311,13 +436,13 @@ fun DashboardScreen(
                         Icon(
                             imageVector = Icons.Default.Warning,
                             contentDescription = "Reminding Alerts",
-                            tint = Color(0xFFC81E1E)
+                            tint = MaterialTheme.colorScheme.error
                         )
                         Text(
                             text = "OUTSTANDING CARRY-OVERS (${carryOvers.size})",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF9B1C1C)
+                            color = MaterialTheme.colorScheme.onErrorContainer
                         )
                     }
                     
@@ -326,7 +451,7 @@ fun DashboardScreen(
                     Text(
                         text = "The following courses received a failing grade or require a carry-over retake. They are appended to your upcoming registrations:",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF7F1D1D)
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
                     )
                     
                     Spacer(modifier = Modifier.height(8.dp))
@@ -340,12 +465,12 @@ fun DashboardScreen(
                                 text = "${course.code}: ${course.title}",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF9B1C1C)
+                                color = MaterialTheme.colorScheme.onErrorContainer
                             )
                             Text(
                                 text = "${course.units} Units [Grade: ${course.grade}]",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color(0xFF7F1D1D)
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                             )
                         }
                     }
@@ -406,7 +531,7 @@ fun DashboardScreen(
                         modifier = Modifier.height(30.dp).testTag("open_scholarships_dashboard_button")
                     ) {
                         Text("View Tracker", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
                     }
                 }
 
@@ -439,6 +564,125 @@ fun DashboardScreen(
             }
         }
 
+        // Study Planner Widget (Phase 3)
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.15f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "STUDY PLANNER",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Text(
+                            text = "Manage Self-Study & Timer",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onNavigateToStudyPlanner,
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.height(36.dp).testTag("open_study_planner_button")
+                ) {
+                    Text("Plan Now", fontSize = 12.sp)
+                }
+            }
+        }
+
+        // Academic Utilities (Phase 2)
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Build,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "ACADEMIC UTILITIES",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "GPA Scale & % Converters",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = onNavigateToAssistant,
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                    modifier = Modifier.height(36.dp).testTag("open_academic_assistant_button")
+                ) {
+                    Text("Open Tools", fontSize = 12.sp)
+                }
+            }
+        }
+
         // Target CGPA Simulator Widget ("What-If Analysis")
         TargetCgpaSimulator(
             currentCgpa = cgpa,
@@ -451,6 +695,7 @@ fun DashboardScreen(
 @Composable
 fun ProfileForm(
     profile: StudentProfile,
+    semesters: List<Semester>,
     onSave: (StudentProfile) -> Unit
 ) {
     var name by remember { mutableStateOf(profile.fullName) }
@@ -459,6 +704,9 @@ fun ProfileForm(
     var faculty by remember { mutableStateOf(profile.faculty) }
     var dept by remember { mutableStateOf(profile.department) }
     var level by remember { mutableStateOf(profile.currentLevel) }
+    var session by remember { mutableStateOf(profile.academicSession) }
+    var currentSemesterId by remember { mutableStateOf(profile.currentSemesterId) }
+    var totalRequiredCreditsStr by remember { mutableStateOf(profile.totalRequiredCredits.toString()) }
     var gradYear by remember { mutableStateOf(profile.graduationYear) }
     var targetCgpaStr by remember { mutableStateOf(profile.targetCgpa.toString()) }
     var scale by remember { mutableStateOf(profile.gradingScale) }
@@ -531,6 +779,56 @@ fun ProfileForm(
                     singleLine = true
                 )
             }
+
+            OutlinedTextField(
+                value = session,
+                onValueChange = { session = it },
+                label = { Text("Academic Session (e.g. 2026/2027)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            // Current Semester Selector
+            var expandedSemester by remember { mutableStateOf(false) }
+            val currentSemesterName = semesters.find { it.id == currentSemesterId }?.name ?: "None Selected"
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { expandedSemester = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Current Semester: $currentSemesterName")
+                }
+                DropdownMenu(
+                    expanded = expandedSemester,
+                    onDismissRequest = { expandedSemester = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("None Selected") },
+                        onClick = {
+                            currentSemesterId = 0
+                            expandedSemester = false
+                        }
+                    )
+                    for (sem in semesters) {
+                        DropdownMenuItem(
+                            text = { Text(sem.name) },
+                            onClick = {
+                                currentSemesterId = sem.id
+                                expandedSemester = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = totalRequiredCreditsStr,
+                onValueChange = { totalRequiredCreditsStr = it },
+                label = { Text("Total Programme Credit Requirement") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
 
             // Spinner for level select
             var expandedLevel by remember { mutableStateOf(false) }
@@ -620,6 +918,7 @@ fun ProfileForm(
             Button(
                 onClick = {
                     val doubleVal = targetCgpaStr.toDoubleOrNull() ?: 4.5
+                    val creditsVal = totalRequiredCreditsStr.toIntOrNull() ?: 120
                     onSave(
                         profile.copy(
                             fullName = name,
@@ -628,9 +927,12 @@ fun ProfileForm(
                             faculty = faculty,
                             department = dept,
                             currentLevel = level,
+                            academicSession = session,
+                            currentSemesterId = currentSemesterId,
                             graduationYear = gradYear,
                             gradingScale = scale,
-                            targetCgpa = if (doubleVal <= scale) doubleVal else scale
+                            targetCgpa = if (doubleVal <= scale) doubleVal else scale,
+                            totalRequiredCredits = creditsVal
                         )
                     )
                 },
@@ -726,8 +1028,8 @@ fun TargetCgpaSimulator(
             }
 
             simulationResult?.let { result ->
-                val boxBg = if (result.isPossible) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-                val textTint = if (result.isPossible) Color(0xFF2E7D32) else Color(0xFFC62828)
+                val boxBg = if (result.isPossible) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer
+                val textTint = if (result.isPossible) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer
                 
                 Box(
                     modifier = Modifier

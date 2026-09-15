@@ -97,8 +97,34 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    val studySessions: StateFlow<List<StudySession>> = gpaDao.getAllStudySessions()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val exams: StateFlow<List<Exam>> = gpaDao.getAllExams()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     // CURRENCY & EXCHANGE RATES STATE
     private val currencyPrefs = application.getSharedPreferences("gpa_whiz_currency_prefs", Context.MODE_PRIVATE)
+    
+    // Theme Preference (0 = System, 1 = Light, 2 = Dark)
+    private val _themeMode = MutableStateFlow(currencyPrefs.getInt("theme_mode", 0))
+    val themeMode: StateFlow<Int> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: Int) {
+        currencyPrefs.edit().putInt("theme_mode", mode).apply()
+        _themeMode.value = mode
+    }
+
     private val _defaultCurrency = MutableStateFlow(
         currencyPrefs.getString("base_currency", "NGN")?.let { CurrencyConverter.normalizeCurrencyCode(it) } ?: "NGN"
     )
@@ -166,9 +192,12 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         faculty: String,
         dept: String,
         level: String,
+        session: String,
+        semesterId: Int,
         gradYear: String,
         scale: Double,
-        targetCgpa: Double
+        targetCgpa: Double,
+        totalRequiredCredits: Int
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = StudentProfile(
@@ -179,9 +208,12 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 faculty = faculty,
                 department = dept,
                 currentLevel = level,
+                academicSession = session,
+                currentSemesterId = semesterId,
                 graduationYear = gradYear,
                 gradingScale = scale,
-                targetCgpa = targetCgpa
+                targetCgpa = targetCgpa,
+                totalRequiredCredits = totalRequiredCredits
             )
             gpaDao.insertStudentProfile(updated)
             _uiMessage.value = "Student profile saved."
@@ -267,6 +299,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
     // TIMETABLE CRUD
     fun addTimetableSlot(
         context: Context,
+        courseId: Int?,
         courseCode: String,
         venue: String,
         dayOfWeek: Int,
@@ -275,6 +308,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val slot = TimetableSlot(
+                courseId = courseId,
                 courseCode = courseCode.uppercase(),
                 venue = venue,
                 dayOfWeek = dayOfWeek,
@@ -765,6 +799,135 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _uiMessage.value = "Validation Failed: Corrupted schema! ${e.message}"
             }
+        }
+    }
+
+    // STUDY SESSIONS CRUD
+    fun addStudySession(
+        courseId: Int,
+        courseCode: String,
+        date: Long,
+        startTime: String,
+        durationMinutes: Int,
+        isRecurring: Boolean = false,
+        dayOfWeek: Int? = null,
+        reminderEnabled: Boolean = true
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val session = StudySession(
+                courseId = courseId,
+                courseCode = courseCode,
+                date = date,
+                startTime = startTime,
+                durationMinutes = durationMinutes,
+                isRecurring = isRecurring,
+                dayOfWeek = dayOfWeek,
+                reminderEnabled = reminderEnabled
+            )
+            val id = gpaDao.insertStudySession(session)
+            if (reminderEnabled) {
+                launch(Dispatchers.Main) {
+                    AlarmScheduler.scheduleStudyAlarm(getApplication(), session.copy(id = id.toInt()))
+                }
+            }
+            _uiMessage.value = "Study session for $courseCode scheduled."
+        }
+    }
+
+    fun updateStudySessionStatus(session: StudySession, status: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = session.copy(status = status)
+            gpaDao.updateStudySession(updated)
+            if (status == "Completed" || status == "Cancelled") {
+                launch(Dispatchers.Main) {
+                    AlarmScheduler.cancelStudyAlarm(getApplication(), session)
+                }
+            }
+        }
+    }
+
+    fun updateStudySession(session: StudySession) {
+        viewModelScope.launch(Dispatchers.IO) {
+            gpaDao.updateStudySession(session)
+            launch(Dispatchers.Main) {
+                AlarmScheduler.cancelStudyAlarm(getApplication(), session)
+                if (session.reminderEnabled && session.status == "Upcoming") {
+                    AlarmScheduler.scheduleStudyAlarm(getApplication(), session)
+                }
+            }
+            _uiMessage.value = "Study session updated."
+        }
+    }
+
+    fun toggleStudySessionAlert(session: StudySession) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = session.copy(reminderEnabled = !session.reminderEnabled)
+            gpaDao.updateStudySession(updated)
+            launch(Dispatchers.Main) {
+                if (updated.reminderEnabled && updated.status == "Upcoming") {
+                    AlarmScheduler.scheduleStudyAlarm(getApplication(), updated)
+                } else {
+                    AlarmScheduler.cancelStudyAlarm(getApplication(), updated)
+                }
+            }
+        }
+    }
+
+    fun deleteStudySession(session: StudySession) {
+        viewModelScope.launch(Dispatchers.IO) {
+            gpaDao.deleteStudySession(session)
+            launch(Dispatchers.Main) {
+                AlarmScheduler.cancelStudyAlarm(getApplication(), session)
+            }
+            _uiMessage.value = "Study session removed."
+        }
+    }
+
+    // EXAMS CRUD
+    fun addExam(courseId: Int, courseCode: String, date: Long, time: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val exam = Exam(
+                courseId = courseId,
+                courseCode = courseCode,
+                date = date,
+                time = time,
+                alertEnabled = true
+            )
+            val id = gpaDao.insertExam(exam)
+            launch(Dispatchers.Main) {
+                AlarmScheduler.scheduleExamAlarm(getApplication(), exam.copy(id = id.toInt()))
+            }
+            _uiMessage.value = "Exam for $courseCode added."
+        }
+    }
+
+    fun deleteExam(exam: Exam) {
+        viewModelScope.launch(Dispatchers.IO) {
+            launch(Dispatchers.Main) {
+                AlarmScheduler.cancelExamAlarm(getApplication(), exam)
+            }
+            gpaDao.deleteExam(exam)
+            _uiMessage.value = "Exam record removed."
+        }
+    }
+
+    fun toggleExamAlert(exam: Exam) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = exam.copy(alertEnabled = !exam.alertEnabled)
+            gpaDao.updateExam(updated)
+            launch(Dispatchers.Main) {
+                if (updated.alertEnabled) {
+                    AlarmScheduler.scheduleExamAlarm(getApplication(), updated)
+                } else {
+                    AlarmScheduler.cancelExamAlarm(getApplication(), updated)
+                }
+            }
+        }
+    }
+
+    fun exportExamToCalendar(exam: Exam) {
+        viewModelScope.launch(Dispatchers.Main) {
+            AlarmScheduler.exportExamToCalendar(getApplication(), exam)
         }
     }
 }

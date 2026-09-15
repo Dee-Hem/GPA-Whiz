@@ -168,7 +168,7 @@ fun ScholarshipFormDialog(
                                 label = { Text("Currency") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = currencyDropdownExpanded) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                             )
                             ExposedDropdownMenu(
                                 expanded = currencyDropdownExpanded,
@@ -211,7 +211,7 @@ fun ScholarshipFormDialog(
                         label = { Text("Application Status") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = statusDropdownExpanded) },
                         colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                        modifier = Modifier.menuAnchor().fillMaxWidth().testTag("scholarship_status_dropdown")
+                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth().testTag("scholarship_status_dropdown")
                     )
                     ExposedDropdownMenu(
                         expanded = statusDropdownExpanded,
@@ -230,7 +230,7 @@ fun ScholarshipFormDialog(
                 }
 
                 // Section 2: Important Dates & Timelines
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text("Key Dates & Deadlines", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -285,7 +285,7 @@ fun ScholarshipFormDialog(
                 }
 
                 // Section 3: Eligibility & CGPA Check
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text("Eligibility Criteria (Local Comparison)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -308,7 +308,7 @@ fun ScholarshipFormDialog(
                 }
 
                 // Section 4: URLs & Offline Stored Info
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                 Text("Contact & Links (Stored Offline)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                 OutlinedTextField(
@@ -350,7 +350,7 @@ fun ScholarshipFormDialog(
 
                 // Quick bundle predefined requirements if creating new scholarship
                 if (showQuickBundling && scholarship == null) {
-                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Text("Quick-Add Common Requirements", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     Text("Select standard documents to auto-populate the checklist:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 

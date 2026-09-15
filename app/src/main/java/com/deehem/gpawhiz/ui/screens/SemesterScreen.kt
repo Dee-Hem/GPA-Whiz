@@ -145,37 +145,74 @@ fun SemesterScreen(
                     border = BorderStroke(1.dp, semColor.copy(alpha = 0.25f)),
                     shape = RoundedCornerShape(16.dp)
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Column {
-                            Text(
-                                text = sem.name,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Registered Credit Units: $totalUnits",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
+                        Text(
+                            text = sem.name,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         
-                        Column(horizontalAlignment = Alignment.End) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text(
-                                text = "SGPA",
-                                style = MaterialTheme.typography.labelSmall,
+                                text = "GPA:",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                             )
                             Text(
                                 text = "%.2f".format(sgpa),
-                                fontSize = 32.sp,
+                                style = MaterialTheme.typography.headlineMedium,
                                 fontWeight = FontWeight.Black,
-                                color = semColor
+                                color = semColor,
+                                softWrap = false
                             )
+                            Spacer(modifier = Modifier.weight(1f))
+                            Text(
+                                text = "Units: $totalUnits",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.updateProfile(
+                                    name = profile.fullName,
+                                    institution = profile.institution,
+                                    matric = profile.matricNo,
+                                    faculty = profile.faculty,
+                                    dept = profile.department,
+                                    level = profile.currentLevel,
+                                    session = profile.academicSession,
+                                    semesterId = sem.id,
+                                    gradYear = profile.graduationYear,
+                                    scale = profile.gradingScale,
+                                    targetCgpa = profile.targetCgpa,
+                                    totalRequiredCredits = profile.totalRequiredCredits
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = profile.currentSemesterId != sem.id,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = if (profile.currentSemesterId == sem.id) 
+                                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f), contentColor = MaterialTheme.colorScheme.secondary)
+                                else ButtonDefaults.buttonColors()
+                        ) {
+                            Icon(
+                                imageVector = if (profile.currentSemesterId == sem.id) Icons.Default.CheckCircle else Icons.Default.DateRange, 
+                                contentDescription = null, 
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (profile.currentSemesterId == sem.id) "Current Semester" else "Set as Current Semester")
                         }
                     }
                 }

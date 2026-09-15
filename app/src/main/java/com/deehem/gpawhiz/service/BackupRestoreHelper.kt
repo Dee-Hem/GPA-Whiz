@@ -28,9 +28,12 @@ object BackupRestoreHelper {
             put("faculty", profile.faculty)
             put("department", profile.department)
             put("currentLevel", profile.currentLevel)
+            put("academicSession", profile.academicSession)
+            put("currentSemesterId", profile.currentSemesterId)
             put("graduationYear", profile.graduationYear)
             put("gradingScale", profile.gradingScale)
             put("targetCgpa", profile.targetCgpa)
+            put("totalRequiredCredits", profile.totalRequiredCredits)
         }
         root.put("profile", profileJson)
 
@@ -183,9 +186,12 @@ object BackupRestoreHelper {
             faculty = profJson.optString("faculty", ""),
             department = profJson.optString("department", ""),
             currentLevel = profJson.optString("currentLevel", "100L"),
+            academicSession = profJson.optString("academicSession", ""),
+            currentSemesterId = profJson.optInt("currentSemesterId", 0),
             graduationYear = profJson.optString("graduationYear", ""),
             gradingScale = profJson.optDouble("gradingScale", 5.0),
-            targetCgpa = profJson.optDouble("targetCgpa", 4.5)
+            targetCgpa = profJson.optDouble("targetCgpa", 4.5),
+            totalRequiredCredits = profJson.optInt("totalRequiredCredits", 120)
         )
 
         // Parse Semesters

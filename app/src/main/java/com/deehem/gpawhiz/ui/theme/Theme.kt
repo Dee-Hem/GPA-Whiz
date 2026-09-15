@@ -8,6 +8,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val LightColorScheme = lightColorScheme(
@@ -22,29 +23,42 @@ private val LightColorScheme = lightColorScheme(
     tertiary = YellowTertiary,
     background = GrayBackground,
     surface = GraySurface,
+    onSurface = Color(0xFF1F1F1F),
     surfaceVariant = GraySurfaceVariant,
+    onSurfaceVariant = Color(0xFF44474E),
     outline = GrayOutline
 )
 
 private val DarkColorScheme = darkColorScheme(
     primary = BluePrimary,
-    onPrimary = BlueOnPrimary,
-    primaryContainer = BluePrimaryContainer,
-    onPrimaryContainer = BlueOnPrimaryContainer,
+    onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFF004494),
+    onPrimaryContainer = Color(0xFFD3E3FD),
     secondary = GreenSecondary,
-    onSecondary = GreenOnSecondary,
-    secondaryContainer = GreenSecondaryContainer,
-    onSecondaryContainer = GreenOnSecondaryContainer,
-    tertiary = YellowTertiary
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFF00532C),
+    onSecondaryContainer = Color(0xFFE7F5ED),
+    tertiary = YellowTertiary,
+    background = Color(0xFF121212),
+    surface = Color(0xFF1E1E1E),
+    onSurface = Color(0xFFE3E2E6),
+    surfaceVariant = Color(0xFF44474E),
+    onSurfaceVariant = Color(0xFFC4C6D0),
+    outline = Color(0xFF8E9099)
 )
 
 @Composable
 fun MyApplicationTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Set to false by default to enforce our premium Professional Polish theme design brand coloring
+    themeMode: Int = 0, // 0: System, 1: Light, 2: Dark
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themeMode) {
+        1 -> false
+        2 -> true
+        else -> isSystemInDarkTheme()
+    }
+
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current

@@ -7,9 +7,12 @@ import android.content.Intent
 import android.os.Build
 import android.provider.CalendarContract
 import android.widget.Toast
+import com.deehem.gpawhiz.data.Exam
+import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.receiver.AlarmReceiver
 import java.util.Calendar
+import java.util.Date
 
 object AlarmScheduler {
 
@@ -37,6 +40,7 @@ object AlarmScheduler {
             set(Calendar.HOUR_OF_DAY, hour)
             set(Calendar.MINUTE, minute)
             set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
             
             // Notification is 60 minutes before the class begins
             add(Calendar.MINUTE, -60)
@@ -104,10 +108,197 @@ object AlarmScheduler {
         alarmManager.cancel(pendingIntent)
     }
 
+    fun scheduleStudyAlarm(context: Context, session: StudySession) {
+        if (!session.reminderEnabled || session.status != "Upcoming") return
+
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val parts = session.startTime.split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 16
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+
+        val calendar = Calendar.getInstance()
+        if (session.isRecurring && session.dayOfWeek != null) {
+            val targetDay = when (session.dayOfWeek) {
+                1 -> Calendar.MONDAY
+                2 -> Calendar.TUESDAY
+                3 -> Calendar.WEDNESDAY
+                4 -> Calendar.THURSDAY
+                5 -> Calendar.FRIDAY
+                6 -> Calendar.SATURDAY
+                else -> Calendar.SUNDAY
+            }
+            calendar.set(Calendar.DAY_OF_WEEK, targetDay)
+        } else {
+            calendar.timeInMillis = session.date
+        }
+        
+        // Normalize date part first
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        calendar.set(Calendar.HOUR_OF_DAY, hour)
+        calendar.set(Calendar.MINUTE, minute)
+        
+        // Reminder 15 minutes before study begins
+        calendar.add(Calendar.MINUTE, -15)
+
+        if (calendar.timeInMillis <= System.currentTimeMillis()) {
+            if (session.isRecurring) {
+                calendar.add(Calendar.DAY_OF_YEAR, 7)
+            } else {
+                return // Past session, don't schedule
+            }
+        }
+
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra("isStudySession", true)
+            putExtra("courseCode", session.courseCode)
+            putExtra("startTime", session.startTime)
+            putExtra("duration", session.durationMinutes)
+            putExtra("sessionId", session.id)
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            "study_${session.id}".hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+                } else {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+                }
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+            }
+        } catch (e: Exception) {
+            alarmManager.set(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+        }
+    }
+
+    fun cancelStudyAlarm(context: Context, session: StudySession) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            "study_${session.id}".hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+    }
+
     fun rescheduleAll(context: Context, slots: List<TimetableSlot>) {
         for (slot in slots) {
             cancelAlarm(context, slot)
             scheduleAlarm(context, slot)
+        }
+    }
+
+    fun scheduleExamAlarm(context: Context, exam: Exam) {
+        if (!exam.alertEnabled) return
+
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val parts = exam.time.split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 9
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = exam.date
+        // Normalize date part
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        calendar.set(Calendar.HOUR_OF_DAY, hour)
+        calendar.set(Calendar.MINUTE, minute)
+
+        // Exam reminder 2 hours before
+        calendar.add(Calendar.HOUR_OF_DAY, -2)
+
+        if (calendar.timeInMillis <= System.currentTimeMillis()) return
+
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra("isExam", true)
+            putExtra("courseCode", exam.courseCode)
+            putExtra("startTime", exam.time)
+            putExtra("examId", exam.id)
+        }
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            "exam_${exam.id}".hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (alarmManager.canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+                } else {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+                }
+            } else {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+            }
+        } catch (e: Exception) {
+            alarmManager.set(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
+        }
+    }
+
+    fun cancelExamAlarm(context: Context, exam: Exam) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            "exam_${exam.id}".hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+    }
+
+    fun exportExamToCalendar(context: Context, exam: Exam) {
+        val parts = exam.time.split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 9
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = exam.date
+        // Normalize
+        calendar.set(Calendar.HOUR_OF_DAY, 0)
+        calendar.set(Calendar.MINUTE, 0)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+
+        calendar.set(Calendar.HOUR_OF_DAY, hour)
+        calendar.set(Calendar.MINUTE, minute)
+
+        val startTimeMillis = calendar.timeInMillis
+        val endTimeMillis = startTimeMillis + (3 * 60 * 60 * 1000) // Default 3 hours for exam
+
+        val intent = Intent(Intent.ACTION_INSERT).apply {
+            data = CalendarContract.Events.CONTENT_URI
+            putExtra(CalendarContract.Events.TITLE, "${exam.courseCode} Examination")
+            putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, startTimeMillis)
+            putExtra(CalendarContract.EXTRA_EVENT_END_TIME, endTimeMillis)
+            putExtra(CalendarContract.Events.DESCRIPTION, "Final Examination for ${exam.courseCode}. Imported from GPA Whiz.")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+
+        try {
+            context.startActivity(intent)
+            Toast.makeText(context, "Adding exam to calendar...", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Could not open calendar.", Toast.LENGTH_LONG).show()
         }
     }
 

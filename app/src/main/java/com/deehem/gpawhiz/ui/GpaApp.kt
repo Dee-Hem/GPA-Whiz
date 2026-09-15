@@ -6,9 +6,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
@@ -30,7 +31,7 @@ import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
 
 enum class MainTab(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     DASHBOARD("Dashboard", Icons.Default.Home),
-    SEMESTERS("Courses", Icons.Default.List),
+    SEMESTERS("Courses", Icons.AutoMirrored.Filled.List),
     SCHOLARSHIPS("Scholarships", Icons.Default.Star),
     TIMETABLE("Timetable", Icons.Default.DateRange),
     PORTABILITY("Settings", Icons.Default.Settings)
@@ -45,6 +46,7 @@ fun GpaApp(
     val context = LocalContext.current
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var selectedScholarshipId by remember { mutableStateOf<Int?>(null) }
+    var isShowingAssistant by remember { mutableStateOf(false) }
     val profile by viewModel.studentProfile.collectAsState()
 
     // Toast updates listener
@@ -166,31 +168,42 @@ fun GpaApp(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            when (currentTab) {
-                MainTab.DASHBOARD -> DashboardScreen(
-                    viewModel = viewModel,
-                    onNavigateToScholarships = {
-                        currentTab = MainTab.SCHOLARSHIPS
-                        selectedScholarshipId = null
-                    }
+            if (isShowingAssistant) {
+                com.deehem.gpawhiz.ui.screens.AcademicAssistantScreen(
+                    onNavigateBack = { isShowingAssistant = false }
                 )
-                MainTab.SEMESTERS -> SemesterScreen(viewModel = viewModel)
-                MainTab.SCHOLARSHIPS -> {
-                    if (selectedScholarshipId != null) {
-                        ScholarshipDetailsScreen(
-                            scholarshipId = selectedScholarshipId!!,
-                            viewModel = viewModel,
-                            onNavigateBack = { selectedScholarshipId = null }
-                        )
-                    } else {
-                        ScholarshipsScreen(
-                            viewModel = viewModel,
-                            onSelectScholarship = { selectedScholarshipId = it }
-                        )
+            } else {
+                when (currentTab) {
+                    MainTab.DASHBOARD -> DashboardScreen(
+                        viewModel = viewModel,
+                        onNavigateToScholarships = {
+                            currentTab = MainTab.SCHOLARSHIPS
+                            selectedScholarshipId = null
+                        },
+                        onNavigateToAssistant = { isShowingAssistant = true },
+                        onNavigateToStudyPlanner = { currentTab = MainTab.TIMETABLE }
+                    )
+                    MainTab.SEMESTERS -> SemesterScreen(viewModel = viewModel)
+                    MainTab.SCHOLARSHIPS -> {
+                        if (selectedScholarshipId != null) {
+                            ScholarshipDetailsScreen(
+                                scholarshipId = selectedScholarshipId!!,
+                                viewModel = viewModel,
+                                onNavigateBack = { selectedScholarshipId = null }
+                            )
+                        } else {
+                            ScholarshipsScreen(
+                                viewModel = viewModel,
+                                onSelectScholarship = { selectedScholarshipId = it }
+                            )
+                        }
                     }
+                    MainTab.TIMETABLE -> TimetableScreen(viewModel = viewModel)
+                    MainTab.PORTABILITY -> SettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateToAssistant = { isShowingAssistant = true }
+                    )
                 }
-                MainTab.TIMETABLE -> TimetableScreen(viewModel = viewModel)
-                MainTab.PORTABILITY -> SettingsScreen(viewModel = viewModel)
             }
         }
     }

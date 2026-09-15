@@ -65,4 +65,36 @@ interface GpaDao {
 
     @Query("DELETE FROM timetable_slots")
     suspend fun clearAllTimetableSlots()
+
+    // Study Sessions
+    @Query("SELECT * FROM study_sessions ORDER BY date ASC, startTime ASC")
+    fun getAllStudySessions(): Flow<List<StudySession>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStudySession(session: StudySession): Long
+
+    @Update
+    suspend fun updateStudySession(session: StudySession)
+
+    @Delete
+    suspend fun deleteStudySession(session: StudySession)
+
+    @Query("DELETE FROM study_sessions")
+    suspend fun clearAllStudySessions()
+
+    // Exams
+    @Query("SELECT * FROM exams ORDER BY date ASC, time ASC")
+    fun getAllExams(): Flow<List<Exam>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExam(exam: Exam): Long
+
+    @Update
+    suspend fun updateExam(exam: Exam)
+
+    @Delete
+    suspend fun deleteExam(exam: Exam)
+
+    @Query("DELETE FROM exams")
+    suspend fun clearAllExams()
 }

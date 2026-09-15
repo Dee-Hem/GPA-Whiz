@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -118,7 +119,7 @@ fun ScholarshipDetailsScreen(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onNavigateBack, modifier = Modifier.testTag("back_button")) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Spacer(modifier = Modifier.width(4.dp))
                 Column {
@@ -413,7 +414,7 @@ fun ScholarshipDetailsScreen(
 
                                 if (scholarship.awardAmount != null && scholarship.awardAmount!! > 0) {
                                     val finalCurr = scholarship.awardCurrency ?: effCurr
-                                    Divider(modifier = Modifier.padding(vertical = 2.dp))
+                                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,

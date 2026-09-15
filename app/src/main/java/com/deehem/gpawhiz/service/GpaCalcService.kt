@@ -170,6 +170,59 @@ object GpaCalcService {
     }
 
     /**
+     * Calculate total credits successfully completed (grade not 'F')
+     */
+    fun calculateCreditsCompleted(allCourses: List<Course>): Int {
+        return allCourses.filter { 
+            !it.grade.equals("Awaiting Grade", ignoreCase = true) && 
+            !it.grade.equals("AR", ignoreCase = true) && 
+            it.grade.uppercase() != "F" &&
+            it.grade.isNotBlank()
+        }.sumOf { it.units }
+    }
+
+    /**
+     * Calculate total credits attempted (all courses with a definitive grade)
+     */
+    fun calculateCreditsAttempted(allCourses: List<Course>): Int {
+        return allCourses.filter { 
+            !it.grade.equals("Awaiting Grade", ignoreCase = true) && 
+            !it.grade.equals("AR", ignoreCase = true) && 
+            it.grade.isNotBlank()
+        }.sumOf { it.units }
+    }
+
+    /**
+     * Calculate credits for a specific semester
+     */
+    fun calculateSemesterCredits(semesterId: Int, allCourses: List<Course>): Int {
+        return allCourses.filter { it.semesterId == semesterId }.sumOf { it.units }
+    }
+
+    /**
+     * Convert GPA value between scales (proportional scaling)
+     */
+    fun convertScale(value: Double, from: Double, to: Double): Double {
+        if (from <= 0) return 0.0
+        return (value / from) * to
+    }
+
+    /**
+     * Approximate Percentage to GPA conversion
+     */
+    fun percentageToGpa(percentage: Double, scale: Double): Double {
+        // Approximate mapping based on standard scales
+        return when {
+            percentage >= 70 -> scale // A
+            percentage >= 60 -> scale * 0.8 // B
+            percentage >= 50 -> scale * 0.6 // C
+            percentage >= 45 -> scale * 0.4 // D
+            percentage >= 40 && scale >= 5.0 -> scale * 0.2 // E
+            else -> 0.0 // F
+        }
+    }
+
+    /**
      * Simulation algorithm for target CGPA
      * Returns the required SGPA in the remaining semesters, or null if impossible.
      */
