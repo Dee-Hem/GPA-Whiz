@@ -68,8 +68,28 @@ fun ScholarshipDetailsScreen(
     var showOutcomeDialog by remember { mutableStateOf(false) }
     var showTimelineDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<Any?>(null) }
     var showStatusMenu by remember { mutableStateOf(false) }
+
+    // Delete confirmation dialog
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Delete Item?") },
+            text = { Text("Are you sure you want to delete ${when(val item = itemToDelete) { is Scholarship -> "scholarship '${item.name}'"; is ScholarshipRequirement -> "requirement '${item.title}'"; is ScholarshipTimelineEvent -> "this note"; else -> "this item" }}?") },
+            confirmButton = {
+                Button(onClick = {
+                    when(val item = itemToDelete) {
+                        is Scholarship -> { viewModel.deleteScholarship(item); onNavigateBack() }
+                        is ScholarshipRequirement -> viewModel.deleteRequirement(item)
+                        is ScholarshipTimelineEvent -> viewModel.deleteTimelineEvent(item)
+                    }
+                    itemToDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { itemToDelete = null }) { Text("Cancel") } }
+        )
+    }
 
     var requirementFilter by remember { mutableStateOf("All") }
 
@@ -144,7 +164,7 @@ fun ScholarshipDetailsScreen(
                 IconButton(onClick = { showEditDialog = true }, modifier = Modifier.testTag("edit_scholarship_button")) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit Details")
                 }
-                IconButton(onClick = { showDeleteConfirmDialog = true }, modifier = Modifier.testTag("delete_scholarship_button")) {
+                IconButton(onClick = { itemToDelete = scholarship }, modifier = Modifier.testTag("delete_scholarship_button")) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                 }
             }
@@ -629,7 +649,7 @@ fun ScholarshipDetailsScreen(
                                     RequirementItemCard(
                                         requirement = req,
                                         onToggle = { viewModel.toggleRequirementStatus(req) },
-                                        onDelete = { viewModel.deleteRequirement(req) }
+                                        onDelete = { itemToDelete = req }
                                     )
                                 }
                             }
@@ -698,7 +718,7 @@ fun ScholarshipDetailsScreen(
                                         }
                                         if (!event.isAutomatic) {
                                             IconButton(
-                                                onClick = { viewModel.deleteTimelineEvent(event) },
+                                                onClick = { itemToDelete = event },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
                                                 Icon(Icons.Default.Clear, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
@@ -852,31 +872,6 @@ fun ScholarshipDetailsScreen(
             viewModel = viewModel,
             singleScholarship = scholarship,
             onDismiss = { showExportDialog = false }
-        )
-    }
-
-    if (showDeleteConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirmDialog = false },
-            title = { Text("Delete Scholarship?") },
-            text = { Text("Are you sure you want to remove '${scholarship.name}' and all associated requirements and timeline history?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.deleteScholarship(scholarship)
-                        showDeleteConfirmDialog = false
-                        onNavigateBack()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                ) {
-                    Text("Delete")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirmDialog = false }) {
-                    Text("Cancel")
-                }
-            }
         )
     }
 }

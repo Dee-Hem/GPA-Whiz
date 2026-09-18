@@ -50,6 +50,9 @@ interface GpaDao {
     @Query("DELETE FROM courses")
     suspend fun clearAllCourses()
 
+    @Query("SELECT COUNT(*) FROM courses")
+    suspend fun getCourseCount(): Int
+
     // Timetable Slots
     @Query("SELECT * FROM timetable_slots ORDER BY dayOfWeek ASC, startTime ASC")
     fun getAllTimetableSlots(): Flow<List<TimetableSlot>>

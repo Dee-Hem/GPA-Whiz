@@ -45,6 +45,26 @@ fun SemesterScreen(
     var showAddSemesterDialog by remember { mutableStateOf(false) }
     var showAddCourseDialog by remember { mutableStateOf(false) }
     var courseToEdit by remember { mutableStateOf<Course?>(null) }
+    var itemToDelete by remember { mutableStateOf<Any?>(null) }
+
+    // Delete confirmation dialog
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Delete Item?") },
+            text = { Text("Are you sure you want to delete ${when(val item = itemToDelete) { is Semester -> "semester '${item.name}'" else -> "this item" }}?") },
+            confirmButton = {
+                Button(onClick = {
+                    when(val item = itemToDelete) {
+                        is Semester -> viewModel.deleteSemester(item)
+                        is Course -> viewModel.deleteCourse(item)
+                    }
+                    itemToDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { itemToDelete = null }) { Text("Cancel") } }
+        )
+    }
 
     // If semesters change or update, keep selectedSemester synced
     LaunchedEffect(semesters) {
@@ -232,7 +252,7 @@ fun SemesterScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         IconButton(
-                            onClick = { viewModel.deleteSemester(sem) },
+                            onClick = { itemToDelete = sem },
                             modifier = Modifier.testTag("delete_semester_button")
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete Sem", tint = MaterialTheme.colorScheme.error)
@@ -261,7 +281,7 @@ fun SemesterScreen(
                                 courseToEdit = course
                                 showAddCourseDialog = true
                             },
-                            onDelete = { viewModel.deleteCourse(course) }
+                            onDelete = { itemToDelete = course }
                         )
                     }
 

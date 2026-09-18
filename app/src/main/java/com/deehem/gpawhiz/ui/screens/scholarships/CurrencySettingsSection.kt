@@ -33,7 +33,24 @@ fun CurrencySettingsSection(
 
     var showEditDialog by remember { mutableStateOf(false) }
     var rateToEdit by remember { mutableStateOf<ExchangeRate?>(null) }
+    var itemToDelete by remember { mutableStateOf<ExchangeRate?>(null) }
     var currencyDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Delete confirmation dialog
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Delete Rate?") },
+            text = { Text("Are you sure you want to delete this exchange rate?") },
+            confirmButton = {
+                Button(onClick = {
+                    itemToDelete?.let { viewModel.deleteExchangeRate(it) }
+                    itemToDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { itemToDelete = null }) { Text("Cancel") } }
+        )
+    }
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -241,7 +258,7 @@ fun CurrencySettingsSection(
                                     }
                                     IconButton(
                                         onClick = {
-                                            viewModel.deleteExchangeRate(rateEntry)
+                                            itemToDelete = rateEntry
                                         },
                                         modifier = Modifier.size(36.dp).testTag("delete_rate_${rateEntry.fromCurrency}_${rateEntry.toCurrency}")
                                     ) {

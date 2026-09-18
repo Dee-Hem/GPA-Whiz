@@ -47,6 +47,7 @@ fun GpaApp(
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var selectedScholarshipId by remember { mutableStateOf<Int?>(null) }
     var isShowingAssistant by remember { mutableStateOf(false) }
+    
     val profile by viewModel.studentProfile.collectAsState()
 
     // Toast updates listener

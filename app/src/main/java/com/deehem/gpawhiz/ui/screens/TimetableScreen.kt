@@ -77,6 +77,28 @@ fun TimetableScreen(
 ) {
     var selectedTab by remember { mutableStateOf(0) }
     val tabs = listOf("Lectures", "Study Planner", "Exams")
+    
+    var itemToDelete by remember { mutableStateOf<Any?>(null) }
+    val context = LocalContext.current
+
+    if (itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Delete Item?") },
+            text = { Text("Are you sure you want to delete ${when(val item = itemToDelete) { is TimetableSlot -> "this lecture"; is StudySession -> "this study session"; is Exam -> "this exam"; else -> "this item" }}?") },
+            confirmButton = {
+                Button(onClick = {
+                    when(val item = itemToDelete) {
+                        is TimetableSlot -> viewModel.deleteTimetableSlot(context, item)
+                        is StudySession -> viewModel.deleteStudySession(item)
+                        is Exam -> viewModel.deleteExam(item)
+                    }
+                    itemToDelete = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { itemToDelete = null }) { Text("Cancel") } }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -114,15 +136,15 @@ fun TimetableScreen(
         }
 
         when (selectedTab) {
-            0 -> LecturesTab(viewModel)
-            1 -> StudyPlannerTab(viewModel)
-            2 -> ExamsTab(viewModel)
+            0 -> LecturesTab(viewModel, onDeleteSlot = { itemToDelete = it })
+            1 -> StudyPlannerTab(viewModel, onDeleteSession = { itemToDelete = it })
+            2 -> ExamsTab(viewModel, onDeleteExam = { itemToDelete = it })
         }
     }
 }
 
 @Composable
-fun LecturesTab(viewModel: GpaViewModel) {
+fun LecturesTab(viewModel: GpaViewModel, onDeleteSlot: (TimetableSlot) -> Unit) {
     val context = LocalContext.current
     val slots by viewModel.timetableSlots.collectAsState()
     val profile by viewModel.studentProfile.collectAsState()
@@ -186,7 +208,7 @@ fun LecturesTab(viewModel: GpaViewModel) {
                                         TimetableRowItem(
                                             slot = slot,
                                             onToggleAlarm = { viewModel.toggleAlertForSlot(context, slot) },
-                                            onDelete = { viewModel.deleteTimetableSlot(context, slot) },
+                                            onDelete = { onDeleteSlot(slot) },
                                             onExport = { SystemSchedulerWrapper.redirectToSystemCalendar(context, slot) },
                                             onSetDeviceAlarm = { SystemSchedulerWrapper.setSystemAlarm(context, slot) }
                                         )
@@ -213,7 +235,7 @@ fun LecturesTab(viewModel: GpaViewModel) {
 }
 
 @Composable
-fun StudyPlannerTab(viewModel: GpaViewModel) {
+fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> Unit) {
     val sessions by viewModel.studySessions.collectAsState()
     val profile by viewModel.studentProfile.collectAsState()
     val allCourses by viewModel.courses.collectAsState()
@@ -349,7 +371,7 @@ fun StudyPlannerTab(viewModel: GpaViewModel) {
                                 onStart = { },
                                 onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                 onToggleAlarm = { },
-                                onDelete = { viewModel.deleteStudySession(it) }
+                                onDelete = { onDeleteSession(it) }
                             )
                         }
                     }
@@ -382,7 +404,7 @@ fun StudyPlannerTab(viewModel: GpaViewModel) {
 }
 
 @Composable
-fun ExamsTab(viewModel: GpaViewModel) {
+fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
     val exams by viewModel.exams.collectAsState()
     val profile by viewModel.studentProfile.collectAsState()
     val allCourses by viewModel.courses.collectAsState()
@@ -437,7 +459,7 @@ fun ExamsTab(viewModel: GpaViewModel) {
                     items(upcomingExams) { exam ->
                         ExamCard(
                             exam = exam,
-                            onDelete = { viewModel.deleteExam(exam) },
+                            onDelete = { onDeleteExam(exam) },
                             onToggleAlarm = { viewModel.toggleExamAlert(exam) },
                             onCalendarExport = { viewModel.exportExamToCalendar(exam) }
                         )
@@ -450,7 +472,7 @@ fun ExamsTab(viewModel: GpaViewModel) {
                         ExamCard(
                             exam = exam,
                             isPast = true,
-                            onDelete = { viewModel.deleteExam(exam) },
+                            onDelete = { onDeleteExam(exam) },
                             onToggleAlarm = { },
                             onCalendarExport = { }
                         )
