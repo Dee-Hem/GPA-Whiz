@@ -117,6 +117,7 @@ fun DashboardScreen(
             exams = exams,
             onNavigateToTimetable = onNavigateToStudyPlanner,
             onStartPomodoro = onStartPomodoro,
+            onDeleteSession = { viewModel.deleteStudySession(it) },
             modifier = Modifier.fillMaxWidth().testTag("happening_today_card")
         )
 

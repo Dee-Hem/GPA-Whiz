@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -153,14 +154,35 @@ fun SemesterScreen(
                 val semCourses = courses.filter { it.semesterId == sem.id }
                 val sgpa = GpaCalcService.calculateSgpa(semCourses, sem.gradingScale)
                 val totalUnits = semCourses.sumOf { it.units }
+
+                // Cumulative CGPA calculation up to and including this semester
+                val sortedSemesters = remember(semesters) { semesters.sortedBy { it.rank } }
+                val semIndex = sortedSemesters.indexOfFirst { it.id == sem.id }
+                val semestersUpToCurrent = remember(sortedSemesters, semIndex, sem) {
+                    if (semIndex >= 0) sortedSemesters.take(semIndex + 1) else listOf(sem)
+                }
+                val coursesUpToCurrent = remember(courses, semestersUpToCurrent) {
+                    courses.filter { c -> semestersUpToCurrent.any { it.id == c.semesterId } }
+                }
+                val cumulativeCgpa = remember(semestersUpToCurrent, coursesUpToCurrent) {
+                    GpaCalcService.calculateCgpa(semestersUpToCurrent, coursesUpToCurrent)
+                }
+                val cumulativeUnits = remember(coursesUpToCurrent) {
+                    coursesUpToCurrent.filter { 
+                        !it.grade.equals("Awaiting Grade", ignoreCase = true) && 
+                        !it.grade.equals("AR", ignoreCase = true) 
+                    }.sumOf { it.units }
+                }
                 
                 // Color mapping for dynamic semester feedback
                 val colorHex = GpaCalcService.getColorForCgpa(sgpa, sem.gradingScale)
                 val semColor = Color(android.graphics.Color.parseColor(colorHex))
+                val cgpaColorHex = GpaCalcService.getColorForCgpa(cumulativeCgpa, sem.gradingScale)
+                val cgpaColor = Color(android.graphics.Color.parseColor(cgpaColorHex))
 
-                // Semester Scoreboard Summary Card
+                // Semester Scoreboard Summary Card with Semester GPA & Cumulative CGPA
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("semester_scoreboard_card"),
                     colors = CardDefaults.cardColors(containerColor = semColor.copy(alpha = 0.08f)),
                     border = BorderStroke(1.dp, semColor.copy(alpha = 0.25f)),
                     shape = RoundedCornerShape(16.dp)
@@ -169,37 +191,93 @@ fun SemesterScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(
-                            text = sem.name,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = sem.name,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Surface(
+                                color = cgpaColor.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, cgpaColor.copy(alpha = 0.3f))
+                            ) {
+                                Text(
+                                    text = GpaCalcService.getStandingForCgpa(cumulativeCgpa, sem.gradingScale),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = cgpaColor,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.alpha(0.2f))
                         
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = "GPA:",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            // Semester GPA
+                            Column {
+                                Text(
+                                    text = "SEMESTER GPA",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "%.2f".format(sgpa),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = semColor,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = "$totalUnits Units",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .height(44.dp)
+                                    .width(1.dp)
+                                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                             )
-                            Text(
-                                text = "%.2f".format(sgpa),
-                                style = MaterialTheme.typography.headlineMedium,
-                                fontWeight = FontWeight.Black,
-                                color = semColor,
-                                softWrap = false
-                            )
-                            Spacer(modifier = Modifier.weight(1f))
-                            Text(
-                                text = "Units: $totalUnits",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Medium
-                            )
+
+                            // Cumulative CGPA
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "CUMULATIVE CGPA",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "%.2f".format(cumulativeCgpa),
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = cgpaColor,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = "Total: $cumulativeUnits Units",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
 
                         Button(

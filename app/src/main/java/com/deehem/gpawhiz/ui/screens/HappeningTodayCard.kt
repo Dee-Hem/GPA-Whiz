@@ -38,6 +38,7 @@ fun HappeningTodayCard(
     exams: List<Exam>,
     onNavigateToTimetable: () -> Unit = {},
     onStartPomodoro: (StudySession) -> Unit = {},
+    onDeleteSession: ((StudySession) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val now = remember { Calendar.getInstance() }
@@ -360,16 +361,35 @@ fun HappeningTodayCard(
                                     )
                                 }
 
-                                Button(
-                                    onClick = { onStartPomodoro(session) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(36.dp).testTag("today_start_pomodoro_${session.id}")
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Focus", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    Button(
+                                        onClick = { onStartPomodoro(session) },
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(36.dp).testTag("today_start_pomodoro_${session.id}")
+                                    ) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Focus", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    if (onDeleteSession != null) {
+                                        IconButton(
+                                            onClick = { onDeleteSession(session) },
+                                            modifier = Modifier.size(36.dp).testTag("delete_today_session_${session.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete study session",
+                                                tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

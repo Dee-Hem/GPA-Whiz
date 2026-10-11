@@ -333,10 +333,10 @@ fun StudyPlannerTab(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (!filterCompleted) {
-                        // Use full timestamp for categorization to ensure today/future split is accurate
+                        // Any active session from today or earlier that is still Upcoming
                         val todaySessions = filteredSessions.filter { 
                             val ts = getFullTimestamp(it.date, it.startTime)
-                            ts >= now && ts < tomorrowStart 
+                            ts < tomorrowStart 
                         }.sortedBy { getFullTimestamp(it.date, it.startTime) }
                         
                         val futureSessions = filteredSessions.filter { 
@@ -352,7 +352,7 @@ fun StudyPlannerTab(
                                     onOpenPomodoro = onOpenPomodoro,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
-                                    onDelete = { viewModel.deleteStudySession(it) }
+                                    onDelete = { onDeleteSession(it) }
                                 )
                             }
                         }
@@ -366,7 +366,7 @@ fun StudyPlannerTab(
                                     onOpenPomodoro = onOpenPomodoro,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
-                                    onDelete = { viewModel.deleteStudySession(it) }
+                                    onDelete = { onDeleteSession(it) }
                                 )
                             }
                         }
@@ -977,8 +977,11 @@ fun StudySessionCard(
                     OutlinedButton(onClick = { onStatusChange(session, StudyStatus.POSTPONED) }, modifier = Modifier.weight(1f).height(40.dp), shape = RoundedCornerShape(8.dp)) {
                         Text("Postpone", fontSize = 11.sp)
                     }
-                    IconButton(onClick = { onStatusChange(session, StudyStatus.CANCELLED) }) {
-                        Icon(Icons.Default.Close, contentDescription = "Cancel", tint = MaterialTheme.colorScheme.error)
+                    IconButton(
+                        onClick = { onDelete(session) },
+                        modifier = Modifier.testTag("delete_session_button_${session.id}")
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             } else {
