@@ -39,8 +39,49 @@ data class Course(
     val units: Int,
     val score: Int, // 0 - 100
     val grade: String, // "A", "B", "C", "D", "E", "F"
-    val isCarryOver: Boolean = false
+    val isCarryOver: Boolean = false,
+    val assessmentBreakdown: String? = null // Optional JSON breakdown of Continuous Assessment (CA)
 )
+
+data class AssessmentComponent(
+    val name: String,
+    val maxMarks: Int,
+    val scoreEarned: Int? = null
+) {
+    companion object {
+        fun listToJson(components: List<AssessmentComponent>): String {
+            val arr = org.json.JSONArray()
+            for (c in components) {
+                val obj = org.json.JSONObject()
+                obj.put("name", c.name)
+                obj.put("maxMarks", c.maxMarks)
+                if (c.scoreEarned != null) obj.put("scoreEarned", c.scoreEarned)
+                arr.put(obj)
+            }
+            return arr.toString()
+        }
+
+        fun listFromJson(jsonStr: String?): List<AssessmentComponent> {
+            if (jsonStr.isNullOrBlank()) return emptyList()
+            val list = mutableListOf<AssessmentComponent>()
+            try {
+                val arr = org.json.JSONArray(jsonStr)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val score = if (obj.has("scoreEarned") && !obj.isNull("scoreEarned")) obj.getInt("scoreEarned") else null
+                    list.add(
+                        AssessmentComponent(
+                            name = obj.getString("name"),
+                            maxMarks = obj.getInt("maxMarks"),
+                            scoreEarned = score
+                        )
+                    )
+                }
+            } catch (_: Exception) { }
+            return list
+        }
+    }
+}
 
 @Entity(
     tableName = "study_sessions",

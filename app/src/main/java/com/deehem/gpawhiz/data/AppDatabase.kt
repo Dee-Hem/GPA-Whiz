@@ -19,9 +19,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ScholarshipReminder::class,
         ExchangeRate::class,
         StudySession::class,
-        Exam::class
+        Exam::class,
+        EssayDraft::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -31,6 +32,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                try {
+                    database.execSQL("ALTER TABLE courses ADD COLUMN assessmentBreakdown TEXT")
+                } catch (_: Exception) { }
+                database.execSQL("CREATE TABLE IF NOT EXISTS essay_drafts (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, scholarshipId INTEGER, wordLimit INTEGER, lastModified INTEGER NOT NULL, FOREIGN KEY(scholarshipId) REFERENCES scholarships(id) ON UPDATE NO ACTION ON DELETE SET NULL)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_essay_drafts_scholarshipId ON essay_drafts (scholarshipId)")
+            }
+        }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -132,7 +143,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "gpa_whiz_database"
                 )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

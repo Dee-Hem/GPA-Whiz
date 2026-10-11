@@ -39,6 +39,7 @@ fun DashboardScreen(
     onNavigateToScholarships: () -> Unit = {},
     onNavigateToAssistant: () -> Unit = {},
     onNavigateToStudyPlanner: () -> Unit = {},
+    onStartPomodoro: (com.deehem.gpawhiz.data.StudySession) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val profile by viewModel.studentProfile.collectAsState()
@@ -47,6 +48,9 @@ fun DashboardScreen(
     val carryOvers by viewModel.carryOverCourses.collectAsState()
     val scholarships by viewModel.scholarships.collectAsState()
     val scholarshipReqs by viewModel.scholarshipRequirements.collectAsState()
+    val timetableSlots by viewModel.timetableSlots.collectAsState()
+    val studySessions by viewModel.studySessions.collectAsState()
+    val exams by viewModel.exams.collectAsState()
 
     val cgpa = remember(semesters, courses) {
         GpaCalcService.calculateCgpa(semesters, courses)
@@ -106,6 +110,16 @@ fun DashboardScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Happening Today Agenda Card
+        HappeningTodayCard(
+            timetableSlots = timetableSlots,
+            studySessions = studySessions,
+            exams = exams,
+            onNavigateToTimetable = onNavigateToStudyPlanner,
+            onStartPomodoro = onStartPomodoro,
+            modifier = Modifier.fillMaxWidth().testTag("happening_today_card")
+        )
+
         // Welcome and Institution Badge
         Card(
             shape = RoundedCornerShape(16.dp),
@@ -293,6 +307,15 @@ fun DashboardScreen(
                 }
             }
         }
+
+        // CGPA Progression Trend Line Chart (Jetpack Compose Canvas)
+        CgpaProgressionChartCard(
+            semesters = semesters,
+            courses = courses,
+            targetCgpa = profile.targetCgpa,
+            gradingScale = profile.gradingScale,
+            modifier = Modifier.fillMaxWidth().testTag("cgpa_progression_chart_card")
+        )
 
         // Academic Foundation & Credit tracking
         Card(

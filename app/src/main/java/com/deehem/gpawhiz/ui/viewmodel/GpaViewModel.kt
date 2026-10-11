@@ -97,6 +97,14 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    val essayDrafts: StateFlow<List<EssayDraft>> = scholarshipDao.getAllDrafts()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     val studySessions: StateFlow<List<StudySession>> = gpaDao.getAllStudySessions()
         .flowOn(Dispatchers.IO)
         .stateIn(
@@ -246,7 +254,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         units: Int,
         score: Int,
         grade: String,
-        isCarryOver: Boolean
+        isCarryOver: Boolean,
+        assessmentBreakdown: String? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val course = Course(
@@ -256,7 +265,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 units = units,
                 score = score,
                 grade = grade,
-                isCarryOver = isCarryOver || grade.uppercase() == "F"
+                isCarryOver = isCarryOver || grade.uppercase() == "F",
+                assessmentBreakdown = assessmentBreakdown
             )
             gpaDao.insertCourse(course)
             _uiMessage.value = "Course ${code.uppercase()} added."
@@ -271,7 +281,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         units: Int,
         score: Int,
         grade: String,
-        isCarryOver: Boolean
+        isCarryOver: Boolean,
+        assessmentBreakdown: String? = null
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = Course(
@@ -282,7 +293,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 units = units,
                 score = score,
                 grade = grade,
-                isCarryOver = isCarryOver || grade.uppercase() == "F"
+                isCarryOver = isCarryOver || grade.uppercase() == "F",
+                assessmentBreakdown = assessmentBreakdown
             )
             gpaDao.insertCourse(updated)
             _uiMessage.value = "Course updated."
@@ -746,7 +758,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             scholarships = scholarships.value,
             requirements = scholarshipRequirements.value,
             timelineEvents = scholarshipTimelineEvents.value,
-            reminders = scholarshipReminders.value
+            reminders = scholarshipReminders.value,
+            drafts = essayDrafts.value
         )
     }
 
@@ -764,6 +777,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 scholarshipDao.clearAllRequirements()
                 scholarshipDao.clearAllTimelineEvents()
                 scholarshipDao.clearAllReminders()
+                scholarshipDao.clearAllDrafts()
 
                 // Insert elements
                 gpaDao.insertStudentProfile(data.profile)
@@ -790,6 +804,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 for (r in data.reminders) {
                     scholarshipDao.insertReminder(r)
                 }
+                for (d in data.drafts) {
+                    scholarshipDao.insertDraft(d)
+                }
 
                 // Reschedule all exact timetable alarms
                 launch(Dispatchers.Main) {
@@ -799,6 +816,41 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _uiMessage.value = "Validation Failed: Corrupted schema! ${e.message}"
             }
+        }
+    }
+
+    // ESSAY & SOP DRAFTS CRUD
+    fun addDraft(
+        title: String,
+        body: String = "",
+        scholarshipId: Int? = null,
+        wordLimit: Int? = null,
+        onCreated: ((EssayDraft) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val draft = EssayDraft(
+                title = title.ifBlank { "Untitled Draft" },
+                body = body,
+                scholarshipId = scholarshipId,
+                wordLimit = wordLimit,
+                lastModified = System.currentTimeMillis()
+            )
+            val id = scholarshipDao.insertDraft(draft)
+            _uiMessage.value = "Draft created."
+            onCreated?.let { it(draft.copy(id = id.toInt())) }
+        }
+    }
+
+    fun updateDraft(draft: EssayDraft) {
+        viewModelScope.launch(Dispatchers.IO) {
+            scholarshipDao.updateDraft(draft.copy(lastModified = System.currentTimeMillis()))
+        }
+    }
+
+    fun deleteDraft(draft: EssayDraft) {
+        viewModelScope.launch(Dispatchers.IO) {
+            scholarshipDao.deleteDraft(draft)
+            _uiMessage.value = "Draft deleted."
         }
     }
 

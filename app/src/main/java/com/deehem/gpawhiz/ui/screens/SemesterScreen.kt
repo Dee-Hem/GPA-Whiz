@@ -370,7 +370,7 @@ fun SemesterScreen(
                     showAddCourseDialog = false
                     courseToEdit = null
                 },
-                onSave = { code, title, units, score, grade, carryOver ->
+                onSave = { code, title, units, score, grade, carryOver, assessmentBreakdown ->
                     if (courseToEdit == null) {
                         viewModel.addCourse(
                             semesterId = sem.id,
@@ -379,7 +379,8 @@ fun SemesterScreen(
                             units = units,
                             score = score,
                             grade = grade,
-                            isCarryOver = carryOver
+                            isCarryOver = carryOver,
+                            assessmentBreakdown = assessmentBreakdown
                         )
                     } else {
                         viewModel.updateCourse(
@@ -390,7 +391,8 @@ fun SemesterScreen(
                             units = units,
                             score = score,
                             grade = grade,
-                            isCarryOver = carryOver
+                            isCarryOver = carryOver,
+                            assessmentBreakdown = assessmentBreakdown
                         )
                     }
                     showAddCourseDialog = false

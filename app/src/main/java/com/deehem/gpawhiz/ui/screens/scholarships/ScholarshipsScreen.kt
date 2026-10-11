@@ -46,6 +46,7 @@ fun ScholarshipsScreen(
     val courses by viewModel.courses.collectAsState()
     val defaultCurrency by viewModel.defaultCurrency.collectAsState()
     val exchangeRates by viewModel.exchangeRates.collectAsState()
+    val drafts by viewModel.essayDrafts.collectAsState()
 
     val currentCgpa = remember(semesters, courses) {
         GpaCalcService.calculateCgpa(semesters, courses)
@@ -204,55 +205,59 @@ fun ScholarshipsScreen(
                 onClick = { selectedTab = 2 },
                 text = { Text("Status Pipeline", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
             )
+            Tab(
+                selected = selectedTab == 3,
+                onClick = { selectedTab = 3 },
+                text = { Text("Drafts (${drafts.size})", fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+            )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // SEARCH & FILTER BAR
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search scholarships, providers, notes...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(18.dp)) },
-                trailingIcon = if (searchQuery.isNotEmpty()) {
-                    {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+        // SEARCH & FILTER BAR (Only for All tab)
+        if (selectedTab == 0) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search scholarships, providers, notes...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(18.dp)) },
+                    trailingIcon = if (searchQuery.isNotEmpty()) {
+                        {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                            }
                         }
-                    }
-                } else null,
-                modifier = Modifier.weight(1f).height(50.dp),
-                singleLine = true
-            )
+                    } else null,
+                    modifier = Modifier.weight(1f).height(50.dp),
+                    singleLine = true
+                )
 
-            // Sort Dropdown
-            Box {
-                OutlinedButton(
-                    onClick = { sortMenuExpanded = true },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.height(50.dp)
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
-                }
-                DropdownMenu(
-                    expanded = sortMenuExpanded,
-                    onDismissRequest = { sortMenuExpanded = false }
-                ) {
-                    DropdownMenuItem(text = { Text("Sort by Deadline") }, onClick = { selectedSortOrder = "Deadline"; sortMenuExpanded = false })
-                    DropdownMenuItem(text = { Text("Sort by Name") }, onClick = { selectedSortOrder = "Name"; sortMenuExpanded = false })
-                    DropdownMenuItem(text = { Text("Sort by Amount") }, onClick = { selectedSortOrder = "Amount"; sortMenuExpanded = false })
-                    DropdownMenuItem(text = { Text("Sort by Date Added") }, onClick = { selectedSortOrder = "Added"; sortMenuExpanded = false })
+                // Sort Dropdown
+                Box {
+                    OutlinedButton(
+                        onClick = { sortMenuExpanded = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        modifier = Modifier.height(50.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(
+                        expanded = sortMenuExpanded,
+                        onDismissRequest = { sortMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(text = { Text("Sort by Deadline") }, onClick = { selectedSortOrder = "Deadline"; sortMenuExpanded = false })
+                        DropdownMenuItem(text = { Text("Sort by Name") }, onClick = { selectedSortOrder = "Name"; sortMenuExpanded = false })
+                        DropdownMenuItem(text = { Text("Sort by Amount") }, onClick = { selectedSortOrder = "Amount"; sortMenuExpanded = false })
+                        DropdownMenuItem(text = { Text("Sort by Date Added") }, onClick = { selectedSortOrder = "Added"; sortMenuExpanded = false })
+                    }
                 }
             }
-        }
 
-        // Status Filter Chips
-        if (selectedTab == 0) {
             Spacer(modifier = Modifier.height(8.dp))
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(statusFilters) { filter ->
@@ -263,9 +268,8 @@ fun ScholarshipsScreen(
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(10.dp))
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
 
         // TAB CONTENT
         when (selectedTab) {
@@ -312,6 +316,13 @@ fun ScholarshipsScreen(
                     scholarships = scholarships,
                     allRequirements = allRequirements,
                     onSelectScholarship = onSelectScholarship
+                )
+            }
+            3 -> {
+                // DRAFTS & SOP VAULT VIEW
+                ScholarshipDraftsSection(
+                    viewModel = viewModel,
+                    scholarships = scholarships
                 )
             }
         }

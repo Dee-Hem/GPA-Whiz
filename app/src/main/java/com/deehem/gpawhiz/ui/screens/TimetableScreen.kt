@@ -73,6 +73,7 @@ private fun getDaysDiff(t1: Long, t2: Long): Int {
 @Composable
 fun TimetableScreen(
     viewModel: GpaViewModel,
+    onOpenPomodoro: (StudySession) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf(0) }
@@ -137,7 +138,7 @@ fun TimetableScreen(
 
         when (selectedTab) {
             0 -> LecturesTab(viewModel, onDeleteSlot = { itemToDelete = it })
-            1 -> StudyPlannerTab(viewModel, onDeleteSession = { itemToDelete = it })
+            1 -> StudyPlannerTab(viewModel, onDeleteSession = { itemToDelete = it }, onOpenPomodoro = onOpenPomodoro)
             2 -> ExamsTab(viewModel, onDeleteExam = { itemToDelete = it })
         }
     }
@@ -235,7 +236,11 @@ fun LecturesTab(viewModel: GpaViewModel, onDeleteSlot: (TimetableSlot) -> Unit) 
 }
 
 @Composable
-fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> Unit) {
+fun StudyPlannerTab(
+    viewModel: GpaViewModel,
+    onDeleteSession: (StudySession) -> Unit,
+    onOpenPomodoro: (StudySession) -> Unit = {}
+) {
     val sessions by viewModel.studySessions.collectAsState()
     val profile by viewModel.studentProfile.collectAsState()
     val allCourses by viewModel.courses.collectAsState()
@@ -344,6 +349,7 @@ fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> 
                                 StudySessionCard(
                                     session = session,
                                     onStart = { showTimerForSession = it },
+                                    onOpenPomodoro = onOpenPomodoro,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
                                     onDelete = { viewModel.deleteStudySession(it) }
@@ -357,6 +363,7 @@ fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> 
                                 StudySessionCard(
                                     session = session,
                                     onStart = { showTimerForSession = it },
+                                    onOpenPomodoro = onOpenPomodoro,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
                                     onDelete = { viewModel.deleteStudySession(it) }
@@ -369,6 +376,7 @@ fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> 
                                 session = session,
                                 isHistory = true,
                                 onStart = { },
+                                onOpenPomodoro = { },
                                 onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                 onToggleAlarm = { },
                                 onDelete = { onDeleteSession(it) }
@@ -398,7 +406,8 @@ fun StudyPlannerTab(viewModel: GpaViewModel, onDeleteSession: (StudySession) -> 
             onComplete = {
                 viewModel.updateStudySessionStatus(it, StudyStatus.COMPLETED)
                 showTimerForSession = null
-            }
+            },
+            onOpenPomodoro = onOpenPomodoro
         )
     }
 }
@@ -900,6 +909,7 @@ fun StudySessionCard(
     session: StudySession,
     isHistory: Boolean = false,
     onStart: (StudySession) -> Unit,
+    onOpenPomodoro: (StudySession) -> Unit = {},
     onStatusChange: (StudySession, String) -> Unit,
     onToggleAlarm: (StudySession) -> Unit,
     onDelete: (StudySession) -> Unit
@@ -951,13 +961,21 @@ fun StudySessionCard(
             if (!isHistory) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { onStart(session) }, modifier = Modifier.weight(1f).height(40.dp), shape = RoundedCornerShape(8.dp)) {
+                    Button(
+                        onClick = { onOpenPomodoro(session) },
+                        modifier = Modifier.weight(1.1f).height(40.dp).testTag("open_pomodoro_button"),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Start Timer", fontSize = 12.sp)
+                        Text("Pomodoro", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(onClick = { onStart(session) }, modifier = Modifier.weight(1f).height(40.dp).testTag("start_timer_button"), shape = RoundedCornerShape(8.dp)) {
+                        Text("Timer", fontSize = 12.sp)
                     }
                     OutlinedButton(onClick = { onStatusChange(session, StudyStatus.POSTPONED) }, modifier = Modifier.weight(1f).height(40.dp), shape = RoundedCornerShape(8.dp)) {
-                        Text("Postpone", fontSize = 12.sp)
+                        Text("Postpone", fontSize = 11.sp)
                     }
                     IconButton(onClick = { onStatusChange(session, StudyStatus.CANCELLED) }) {
                         Icon(Icons.Default.Close, contentDescription = "Cancel", tint = MaterialTheme.colorScheme.error)
@@ -1028,7 +1046,12 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
 }
 
 @Composable
-fun StudyTimerDialog(session: StudySession, onDismiss: () -> Unit, onComplete: (StudySession) -> Unit) {
+fun StudyTimerDialog(
+    session: StudySession,
+    onDismiss: () -> Unit,
+    onComplete: (StudySession) -> Unit,
+    onOpenPomodoro: ((StudySession) -> Unit)? = null
+) {
     var timeLeftSeconds by remember { mutableStateOf(session.durationMinutes * 60) }
     var isRunning by remember { mutableStateOf(true) }
     LaunchedEffect(isRunning) { if (isRunning) { while (timeLeftSeconds > 0) { kotlinx.coroutines.delay(1000); timeLeftSeconds-- }; isRunning = false } }
@@ -1040,6 +1063,20 @@ fun StudyTimerDialog(session: StudySession, onDismiss: () -> Unit, onComplete: (
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Button(onClick = { isRunning = !isRunning }, shape = RoundedCornerShape(8.dp)) { Icon(if (isRunning) Icons.Default.Menu else Icons.Default.PlayArrow, contentDescription = null); Spacer(modifier = Modifier.width(4.dp)); Text(if (isRunning) "Pause" else "Resume") }
                 OutlinedButton(onClick = { timeLeftSeconds = session.durationMinutes * 60; isRunning = false }, shape = RoundedCornerShape(8.dp)) { Text("Reset") }
+            }
+            if (onOpenPomodoro != null) {
+                OutlinedButton(
+                    onClick = {
+                        onDismiss()
+                        onOpenPomodoro(session)
+                    },
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("switch_to_pomodoro_dialog_button")
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Switch to Fullscreen Pomodoro Mode", fontSize = 12.sp)
+                }
             }
         }
     }, confirmButton = { Button(onClick = { onComplete(session) }) { Text("Mark Done") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } })

@@ -118,4 +118,26 @@ interface ScholarshipDao {
 
     @Delete
     suspend fun deleteExchangeRate(rate: ExchangeRate)
+
+    // Essay / SOP Drafts
+    @Query("SELECT * FROM essay_drafts ORDER BY lastModified DESC")
+    fun getAllDrafts(): Flow<List<EssayDraft>>
+
+    @Query("SELECT * FROM essay_drafts WHERE id = :id LIMIT 1")
+    fun getDraftById(id: Int): Flow<EssayDraft?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDraft(draft: EssayDraft): Long
+
+    @Update
+    suspend fun updateDraft(draft: EssayDraft)
+
+    @Delete
+    suspend fun deleteDraft(draft: EssayDraft)
+
+    @Query("DELETE FROM essay_drafts WHERE id = :id")
+    suspend fun deleteDraftById(id: Int)
+
+    @Query("DELETE FROM essay_drafts")
+    suspend fun clearAllDrafts()
 }

@@ -47,6 +47,7 @@ fun GpaApp(
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var selectedScholarshipId by remember { mutableStateOf<Int?>(null) }
     var isShowingAssistant by remember { mutableStateOf(false) }
+    var activePomodoroSession by remember { mutableStateOf<com.deehem.gpawhiz.data.StudySession?>(null) }
     
     val profile by viewModel.studentProfile.collectAsState()
 
@@ -57,6 +58,25 @@ fun GpaApp(
             Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
             viewModel.clearUiMessage()
         }
+    }
+
+    if (activePomodoroSession != null) {
+        com.deehem.gpawhiz.ui.screens.PomodoroFocusScreen(
+            session = activePomodoroSession!!,
+            onClose = { focusedMinutes ->
+                if (focusedMinutes > 0) {
+                    val currentSession = activePomodoroSession!!
+                    viewModel.updateStudySession(
+                        currentSession.copy(
+                            durationMinutes = currentSession.durationMinutes + focusedMinutes,
+                            status = com.deehem.gpawhiz.data.StudyStatus.COMPLETED
+                        )
+                    )
+                }
+                activePomodoroSession = null
+            }
+        )
+        return
     }
 
     Scaffold(
@@ -182,7 +202,8 @@ fun GpaApp(
                             selectedScholarshipId = null
                         },
                         onNavigateToAssistant = { isShowingAssistant = true },
-                        onNavigateToStudyPlanner = { currentTab = MainTab.TIMETABLE }
+                        onNavigateToStudyPlanner = { currentTab = MainTab.TIMETABLE },
+                        onStartPomodoro = { activePomodoroSession = it }
                     )
                     MainTab.SEMESTERS -> SemesterScreen(viewModel = viewModel)
                     MainTab.SCHOLARSHIPS -> {
@@ -199,7 +220,10 @@ fun GpaApp(
                             )
                         }
                     }
-                    MainTab.TIMETABLE -> TimetableScreen(viewModel = viewModel)
+                    MainTab.TIMETABLE -> TimetableScreen(
+                        viewModel = viewModel,
+                        onOpenPomodoro = { activePomodoroSession = it }
+                    )
                     MainTab.PORTABILITY -> SettingsScreen(
                         viewModel = viewModel,
                         onNavigateToAssistant = { isShowingAssistant = true }

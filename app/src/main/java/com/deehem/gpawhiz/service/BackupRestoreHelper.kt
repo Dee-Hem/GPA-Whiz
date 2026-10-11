@@ -14,10 +14,11 @@ object BackupRestoreHelper {
         scholarships: List<Scholarship> = emptyList(),
         requirements: List<ScholarshipRequirement> = emptyList(),
         timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
-        reminders: List<ScholarshipReminder> = emptyList()
+        reminders: List<ScholarshipReminder> = emptyList(),
+        drafts: List<EssayDraft> = emptyList()
     ): String {
         val root = JSONObject()
-        root.put("schemaVersion", 2)
+        root.put("schemaVersion", 3)
         root.put("exportedAt", System.currentTimeMillis())
 
         // Profile block
@@ -62,6 +63,9 @@ object BackupRestoreHelper {
                 put("score", course.score)
                 put("grade", course.grade)
                 put("isCarryOver", course.isCarryOver)
+                if (!course.assessmentBreakdown.isNullOrBlank()) {
+                    put("assessmentBreakdown", course.assessmentBreakdown)
+                }
             }
             coursesArray.put(courseJson)
         }
@@ -166,6 +170,21 @@ object BackupRestoreHelper {
         }
         root.put("reminders", remindersArray)
 
+        // Essay / SOP Drafts list
+        val draftsArray = JSONArray()
+        for (draft in drafts) {
+            val dJson = JSONObject().apply {
+                put("id", draft.id)
+                put("title", draft.title)
+                put("body", draft.body)
+                if (draft.scholarshipId != null) put("scholarshipId", draft.scholarshipId)
+                if (draft.wordLimit != null) put("wordLimit", draft.wordLimit)
+                put("lastModified", draft.lastModified)
+            }
+            draftsArray.put(dJson)
+        }
+        root.put("essayDrafts", draftsArray)
+
         return root.toString(4)
     }
 
@@ -223,7 +242,8 @@ object BackupRestoreHelper {
                     units = item.optInt("units", 1),
                     score = item.optInt("score", 0),
                     grade = item.optString("grade", "F"),
-                    isCarryOver = item.optBoolean("isCarryOver", false)
+                    isCarryOver = item.optBoolean("isCarryOver", false),
+                    assessmentBreakdown = if (item.has("assessmentBreakdown") && !item.isNull("assessmentBreakdown")) item.optString("assessmentBreakdown").ifBlank { null } else null
                 )
             )
         }
@@ -345,6 +365,25 @@ object BackupRestoreHelper {
             }
         }
 
+        // Parse Essay / SOP Drafts
+        val draftsList = mutableListOf<EssayDraft>()
+        val dArray = root.optJSONArray("essayDrafts") ?: root.optJSONArray("drafts")
+        if (dArray != null) {
+            for (i in 0 until dArray.length()) {
+                val item = dArray.getJSONObject(i)
+                draftsList.add(
+                    EssayDraft(
+                        id = item.optInt("id", 0),
+                        title = item.optString("title", "Untitled Draft"),
+                        body = item.optString("body", ""),
+                        scholarshipId = if (item.has("scholarshipId") && !item.isNull("scholarshipId")) item.getInt("scholarshipId") else null,
+                        wordLimit = if (item.has("wordLimit") && !item.isNull("wordLimit")) item.getInt("wordLimit") else null,
+                        lastModified = item.optLong("lastModified", System.currentTimeMillis())
+                    )
+                )
+            }
+        }
+
         return BackupData(
             profile = profile,
             semesters = semestersList,
@@ -353,7 +392,8 @@ object BackupRestoreHelper {
             scholarships = scholarshipsList,
             requirements = requirementsList,
             timelineEvents = timelineList,
-            reminders = remindersList
+            reminders = remindersList,
+            drafts = draftsList
         )
     }
 }
@@ -366,5 +406,6 @@ data class BackupData(
     val scholarships: List<Scholarship> = emptyList(),
     val requirements: List<ScholarshipRequirement> = emptyList(),
     val timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
-    val reminders: List<ScholarshipReminder> = emptyList()
+    val reminders: List<ScholarshipReminder> = emptyList(),
+    val drafts: List<EssayDraft> = emptyList()
 )

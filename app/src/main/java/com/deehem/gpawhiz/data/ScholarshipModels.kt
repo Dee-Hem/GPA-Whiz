@@ -260,3 +260,25 @@ object PredefinedRequirements {
         PredefinedRequirement("Other", RequirementCategory.OTHER, "Custom scholarship requirement.")
     )
 }
+
+@Entity(
+    tableName = "essay_drafts",
+    foreignKeys = [
+        ForeignKey(
+            entity = Scholarship::class,
+            parentColumns = ["id"],
+            childColumns = ["scholarshipId"],
+            onDelete = ForeignKey.SET_NULL
+        )
+    ],
+    indices = [Index(value = ["scholarshipId"])]
+)
+data class EssayDraft(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    val title: String,
+    val body: String = "",
+    val scholarshipId: Int? = null,
+    val wordLimit: Int? = null,
+    val lastModified: Long = System.currentTimeMillis()
+)
+
