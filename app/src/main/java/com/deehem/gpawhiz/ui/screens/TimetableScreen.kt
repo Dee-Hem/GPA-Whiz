@@ -960,28 +960,43 @@ fun StudySessionCard(
             }
             if (!isHistory) {
                 Spacer(modifier = Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Button(
                         onClick = { onOpenPomodoro(session) },
-                        modifier = Modifier.weight(1.1f).height(40.dp).testTag("open_pomodoro_button"),
+                        modifier = Modifier.weight(1.3f).height(38.dp).testTag("open_pomodoro_button"),
                         shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Pomodoro", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Pomodoro", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
-                    Button(onClick = { onStart(session) }, modifier = Modifier.weight(1f).height(40.dp).testTag("start_timer_button"), shape = RoundedCornerShape(8.dp)) {
-                        Text("Timer", fontSize = 12.sp)
+                    Button(
+                        onClick = { onStart(session) },
+                        modifier = Modifier.weight(0.9f).height(38.dp).testTag("start_timer_button"),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text("Timer", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     }
-                    OutlinedButton(onClick = { onStatusChange(session, StudyStatus.POSTPONED) }, modifier = Modifier.weight(1f).height(40.dp), shape = RoundedCornerShape(8.dp)) {
-                        Text("Postpone", fontSize = 11.sp)
+                    OutlinedButton(
+                        onClick = { onStatusChange(session, StudyStatus.POSTPONED) },
+                        modifier = Modifier.weight(1.1f).height(38.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
+                        Text("Postpone", fontSize = 11.sp, maxLines = 1, softWrap = false)
                     }
                     IconButton(
                         onClick = { onDelete(session) },
-                        modifier = Modifier.testTag("delete_session_button_${session.id}")
+                        modifier = Modifier.size(38.dp).testTag("delete_session_button_${session.id}")
                     ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
                     }
                 }
             } else {

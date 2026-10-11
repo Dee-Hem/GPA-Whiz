@@ -24,6 +24,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.Course
@@ -200,7 +202,10 @@ fun SemesterScreen(
                                 text = sem.name,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Surface(
                                 color = cgpaColor.copy(alpha = 0.15f),
@@ -212,7 +217,9 @@ fun SemesterScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = cgpaColor,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -225,7 +232,7 @@ fun SemesterScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             // Semester GPA
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = "SEMESTER GPA",
                                     style = MaterialTheme.typography.labelSmall,
@@ -255,14 +262,20 @@ fun SemesterScreen(
                                     .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                             )
 
-                            // Cumulative CGPA
-                            Column(horizontalAlignment = Alignment.End) {
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            // Cumulative GPA (CGPA)
+                            Column(
+                                modifier = Modifier.weight(1.3f),
+                                horizontalAlignment = Alignment.End
+                            ) {
                                 Text(
-                                    text = "CUMULATIVE CGPA",
+                                    text = "CUMULATIVE GPA (CGPA)",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
-                                    letterSpacing = 0.5.sp
+                                    letterSpacing = 0.2.sp,
+                                    textAlign = TextAlign.End
                                 )
                                 Text(
                                     text = "%.2f".format(cumulativeCgpa),
