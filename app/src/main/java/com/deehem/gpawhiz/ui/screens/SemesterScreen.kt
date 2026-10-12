@@ -157,7 +157,7 @@ fun SemesterScreen(
                 val sgpa = GpaCalcService.calculateSgpa(semCourses, sem.gradingScale)
                 val totalUnits = semCourses.sumOf { it.units }
 
-                // Cumulative CGPA calculation up to and including this semester
+                // Cumulative GPA (CGPA) calculation up to and including this semester
                 val sortedSemesters = remember(semesters) { semesters.sortedBy { it.rank } }
                 val semIndex = sortedSemesters.indexOfFirst { it.id == sem.id }
                 val semestersUpToCurrent = remember(sortedSemesters, semIndex, sem) {
@@ -182,7 +182,7 @@ fun SemesterScreen(
                 val cgpaColorHex = GpaCalcService.getColorForCgpa(cumulativeCgpa, sem.gradingScale)
                 val cgpaColor = Color(android.graphics.Color.parseColor(cgpaColorHex))
 
-                // Semester Scoreboard Summary Card with Semester GPA & Cumulative CGPA
+                // Semester Scoreboard Summary Card with Semester GPA & Cumulative GPA (CGPA)
                 Card(
                     modifier = Modifier.fillMaxWidth().testTag("semester_scoreboard_card"),
                     colors = CardDefaults.cardColors(containerColor = semColor.copy(alpha = 0.08f)),
@@ -196,24 +196,25 @@ fun SemesterScreen(
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.Top
                         ) {
                             Text(
                                 text = sem.name,
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                modifier = Modifier.weight(1f, fill = false).padding(end = 8.dp),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                             Surface(
                                 color = cgpaColor.copy(alpha = 0.15f),
                                 shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, cgpaColor.copy(alpha = 0.3f))
+                                border = BorderStroke(1.dp, cgpaColor.copy(alpha = 0.3f)),
+                                modifier = Modifier.padding(top = 2.dp)
                             ) {
                                 Text(
-                                    text = GpaCalcService.getStandingForCgpa(cumulativeCgpa, sem.gradingScale),
+                                    text = GpaCalcService.getClassification(cumulativeCgpa, sem.gradingScale),
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = cgpaColor,

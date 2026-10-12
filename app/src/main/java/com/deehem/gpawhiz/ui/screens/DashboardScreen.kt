@@ -1,6 +1,7 @@
 package com.deehem.gpawhiz.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -39,6 +40,7 @@ fun DashboardScreen(
     onNavigateToScholarships: () -> Unit = {},
     onNavigateToAssistant: () -> Unit = {},
     onNavigateToStudyPlanner: () -> Unit = {},
+    onNavigateToAchievements: () -> Unit = {},
     onStartPomodoro: (com.deehem.gpawhiz.data.StudySession) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -309,6 +311,89 @@ fun DashboardScreen(
             }
         }
 
+        // Achievements Trophy Card (Navigation to Achievements Screen)
+        val badgeStatuses = remember(profile, semesters, courses, scholarships, studySessions) {
+            com.deehem.gpawhiz.model.AchievementBadges.evaluateAll(
+                profile = profile,
+                semesters = semesters,
+                courses = courses,
+                scholarships = scholarships,
+                studySessions = studySessions
+            )
+        }
+        val unlockedCount = remember(badgeStatuses) { badgeStatuses.count { it.isUnlocked } }
+        val totalBadges = remember(badgeStatuses) { badgeStatuses.size }
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNavigateToAchievements() }
+                .testTag("achievements_trophy_card")
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xFFFFA000).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EmojiEvents,
+                            contentDescription = "Achievements",
+                            tint = Color(0xFFFFA000),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "ACHIEVEMENTS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp,
+                            color = Color(0xFFFFA000)
+                        )
+                        Text(
+                            text = "$unlockedCount of $totalBadges unlocked",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "View",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+
         // CGPA Progression Trend Line Chart (Jetpack Compose Canvas)
         CgpaProgressionChartCard(
             semesters = semesters,
@@ -316,6 +401,14 @@ fun DashboardScreen(
             targetCgpa = profile.targetCgpa,
             gradingScale = profile.gradingScale,
             modifier = Modifier.fillMaxWidth().testTag("cgpa_progression_chart_card")
+        )
+
+        // Grade Distribution Donut Chart (Jetpack Compose Canvas)
+        GradeDistributionDonutChartCard(
+            semesters = semesters,
+            courses = courses,
+            gradingScale = profile.gradingScale,
+            modifier = Modifier.fillMaxWidth()
         )
 
         // Academic Foundation & Credit tracking

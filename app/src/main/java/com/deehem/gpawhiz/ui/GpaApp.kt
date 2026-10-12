@@ -7,11 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -47,9 +43,97 @@ fun GpaApp(
     var currentTab by remember { mutableStateOf(MainTab.DASHBOARD) }
     var selectedScholarshipId by remember { mutableStateOf<Int?>(null) }
     var isShowingAssistant by remember { mutableStateOf(false) }
+    var isShowingAchievements by remember { mutableStateOf(false) }
     var activePomodoroSession by remember { mutableStateOf<com.deehem.gpawhiz.data.StudySession?>(null) }
     
     val profile by viewModel.studentProfile.collectAsState()
+    val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+    var isAppUnlocked by remember { mutableStateOf(false) }
+
+    val activity = context as? androidx.fragment.app.FragmentActivity
+    val promptBiometricAuth = {
+        if (activity != null) {
+            com.deehem.gpawhiz.service.BiometricAuthHelper.authenticate(
+                activity = activity,
+                title = "Unlock GPA Whiz",
+                subtitle = "Confirm identity to access your academic dashboard",
+                onSuccess = { isAppUnlocked = true },
+                onError = { err ->
+                    Toast.makeText(context, "Authentication failed: $err", Toast.LENGTH_SHORT).show()
+                }
+            )
+        } else {
+            isAppUnlocked = true
+        }
+    }
+
+    // Trigger biometric prompt on launch if lock is enabled
+    LaunchedEffect(biometricEnabled) {
+        if (biometricEnabled && !isAppUnlocked) {
+            promptBiometricAuth()
+        }
+    }
+
+    // App Lock Overlay when locked
+    if (biometricEnabled && !isAppUnlocked) {
+        Surface(
+            modifier = Modifier.fillMaxSize().testTag("app_lock_screen"),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f), androidx.compose.foundation.shape.CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Lock,
+                        contentDescription = "App Locked",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "GPA Whiz is Locked",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Authenticate with biometric fingerprint or device PIN/pattern to access your records.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(28.dp))
+
+                Button(
+                    onClick = { promptBiometricAuth() },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("unlock_app_button")
+                ) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Fingerprint, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Unlock with Biometrics / PIN", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        return
+    }
 
     // Toast updates listener
     val uiMsg by viewModel.uiMessage.collectAsState()
@@ -193,6 +277,11 @@ fun GpaApp(
                 com.deehem.gpawhiz.ui.screens.AcademicAssistantScreen(
                     onNavigateBack = { isShowingAssistant = false }
                 )
+            } else if (isShowingAchievements) {
+                com.deehem.gpawhiz.ui.screens.AchievementsScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { isShowingAchievements = false }
+                )
             } else {
                 when (currentTab) {
                     MainTab.DASHBOARD -> DashboardScreen(
@@ -203,6 +292,7 @@ fun GpaApp(
                         },
                         onNavigateToAssistant = { isShowingAssistant = true },
                         onNavigateToStudyPlanner = { currentTab = MainTab.TIMETABLE },
+                        onNavigateToAchievements = { isShowingAchievements = true },
                         onStartPomodoro = { activePomodoroSession = it }
                     )
                     MainTab.SEMESTERS -> SemesterScreen(viewModel = viewModel)

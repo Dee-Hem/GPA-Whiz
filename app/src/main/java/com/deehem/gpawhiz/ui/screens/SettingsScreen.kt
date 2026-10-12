@@ -192,6 +192,115 @@ fun SettingsScreen(
             }
         }
 
+        // SECURITY & PRIVACY SECTION
+        Text(
+            text = "SECURITY & PRIVACY",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        val biometricEnabled by viewModel.biometricEnabled.collectAsState()
+        val canUseBiometric = remember { com.deehem.gpawhiz.service.BiometricAuthHelper.canAuthenticate(context) }
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth().testTag("security_settings_card")
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.12f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Biometric App Lock",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = if (canUseBiometric) {
+                                "Require fingerprint, face, or device PIN/pattern to access GPA Whiz"
+                            } else {
+                                "Biometric lock unavailable (set up PIN/Pattern or fingerprint in device Settings)"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Switch(
+                        checked = biometricEnabled,
+                        onCheckedChange = { isChecking ->
+                            if (isChecking) {
+                                if (canUseBiometric) {
+                                    val activity = context as? androidx.fragment.app.FragmentActivity
+                                    if (activity != null) {
+                                        com.deehem.gpawhiz.service.BiometricAuthHelper.authenticate(
+                                            activity = activity,
+                                            title = "Enable App Lock",
+                                            subtitle = "Verify your credentials to enable biometric lock",
+                                            onSuccess = { viewModel.setBiometricEnabled(true) },
+                                            onError = { Toast.makeText(context, "Verification failed: $it", Toast.LENGTH_SHORT).show() }
+                                        )
+                                    } else {
+                                        viewModel.setBiometricEnabled(true)
+                                    }
+                                } else {
+                                    Toast.makeText(context, "Please set up device security (PIN/Fingerprint) first", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                viewModel.setBiometricEnabled(false)
+                            }
+                        },
+                        enabled = canUseBiometric || biometricEnabled,
+                        modifier = Modifier.testTag("biometric_lock_switch")
+                    )
+                }
+
+                if (biometricEnabled) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.VerifiedUser,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "App is secured. Verification will be requested when resuming or opening GPA Whiz.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Multi-Currency & Offline Exchange Rates Section
         CurrencySettingsSection(viewModel = viewModel)
 

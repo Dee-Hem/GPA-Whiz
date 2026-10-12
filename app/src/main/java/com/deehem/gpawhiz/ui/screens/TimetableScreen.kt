@@ -333,15 +333,33 @@ fun StudyPlannerTab(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     if (!filterCompleted) {
-                        // Any active session from today or earlier that is still Upcoming
+                        val overdueSessions = filteredSessions.filter { 
+                            val ts = getFullTimestamp(it.date, it.startTime)
+                            ts < todayStart 
+                        }.sortedBy { getFullTimestamp(it.date, it.startTime) }
+
                         val todaySessions = filteredSessions.filter { 
                             val ts = getFullTimestamp(it.date, it.startTime)
-                            ts < tomorrowStart 
+                            ts in todayStart until tomorrowStart 
                         }.sortedBy { getFullTimestamp(it.date, it.startTime) }
                         
                         val futureSessions = filteredSessions.filter { 
                             getFullTimestamp(it.date, it.startTime) >= tomorrowStart 
                         }.sortedBy { getFullTimestamp(it.date, it.startTime) }
+
+                        if (overdueSessions.isNotEmpty()) {
+                            item { SectionHeader("OVERDUE SESSIONS") }
+                            items(overdueSessions) { session ->
+                                StudySessionCard(
+                                    session = session,
+                                    onStart = { showTimerForSession = it },
+                                    onOpenPomodoro = onOpenPomodoro,
+                                    onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
+                                    onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
+                                    onDelete = { onDeleteSession(it) }
+                                )
+                            }
+                        }
 
                         if (todaySessions.isNotEmpty()) {
                             item { SectionHeader("TODAY'S SESSIONS") }
@@ -959,50 +977,77 @@ fun StudySessionCard(
                 }
             }
             if (!isHistory) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(
+                Spacer(modifier = Modifier.height(14.dp))
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Button(
-                        onClick = { onOpenPomodoro(session) },
-                        modifier = Modifier.weight(1.3f).height(38.dp).testTag("open_pomodoro_button"),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("Pomodoro", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        Button(
+                            onClick = { onOpenPomodoro(session) },
+                            modifier = Modifier
+                                .weight(1.3f)
+                                .height(40.dp)
+                                .testTag("open_pomodoro_button"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Pomodoro", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+
+                        Button(
+                            onClick = { onStart(session) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .testTag("start_timer_button"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        ) {
+                            Text("Timer", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
                     }
-                    Button(
-                        onClick = { onStart(session) },
-                        modifier = Modifier.weight(0.9f).height(38.dp).testTag("start_timer_button"),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Timer", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
-                    }
-                    OutlinedButton(
-                        onClick = { onStatusChange(session, StudyStatus.POSTPONED) },
-                        modifier = Modifier.weight(1.1f).height(38.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
-                    ) {
-                        Text("Postpone", fontSize = 11.sp, maxLines = 1, softWrap = false)
-                    }
-                    IconButton(
-                        onClick = { onDelete(session) },
-                        modifier = Modifier.size(38.dp).testTag("delete_session_button_${session.id}")
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                        OutlinedButton(
+                            onClick = { onStatusChange(session, StudyStatus.POSTPONED) },
+                            modifier = Modifier.height(36.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+                        ) {
+                            Text("Postpone", fontSize = 11.sp, maxLines = 1)
+                        }
+
+                        IconButton(
+                            onClick = { onDelete(session) },
+                            modifier = Modifier.size(48.dp).testTag("delete_session_button_${session.id}")
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             } else {
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = { onDelete(session) }) {
+                    TextButton(
+                        onClick = { onDelete(session) },
+                        modifier = Modifier.defaultMinSize(minHeight = 48.dp)
+                    ) {
                         Text("Remove from History", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
                 }
@@ -1029,11 +1074,32 @@ fun StatusBadge(status: String) {
 fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismiss: () -> Unit, onConfirm: (Int, String, Long, String, Int, Boolean, Int?) -> Unit) {
     val context = LocalContext.current
     var selectedCourseIndex by remember { mutableStateOf(0) }
-    var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
-    var selectedTime by remember { mutableStateOf("16:00") }
+    val todayMidnight = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val defaultTime = remember {
+        val c = Calendar.getInstance().apply {
+            add(Calendar.HOUR_OF_DAY, 1)
+            set(Calendar.MINUTE, 0)
+        }
+        String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
+    }
+    var selectedDate by remember { mutableStateOf(todayMidnight) }
+    var selectedTime by remember { mutableStateOf(defaultTime) }
     var durationMinutes by remember { mutableStateOf("60") }
     var expandedCourse by remember { mutableStateOf(false) }
     val dateFormat = SimpleDateFormat("EEE, MMM dd, yyyy", Locale.getDefault())
+
+    val isPastTime = remember(selectedDate, selectedTime) {
+        val targetTs = getFullTimestamp(selectedDate, selectedTime)
+        targetTs < System.currentTimeMillis()
+    }
+
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Schedule Study") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (courses.isEmpty()) { Text("No courses found. Add courses first.", color = MaterialTheme.colorScheme.error) } else {
@@ -1058,6 +1124,19 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
                     TimePickerDialog(context, { _, h, m -> selectedTime = String.format("%02d:%02d", h, m) }, parts[0].toInt(), parts[1].toInt(), false).show()
                 }, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Start Time: $selectedTime") } }
                 OutlinedTextField(value = durationMinutes, onValueChange = { durationMinutes = it.filter { c -> c.isDigit() } }, label = { Text("Duration (mins)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                if (isPastTime) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Note: Scheduled time is earlier than current time. Session will appear under Today's Sessions ready for immediate focus or timer.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
             }
         }
     }, confirmButton = { Button(onClick = { if (courses.isNotEmpty()) { val course = courses[selectedCourseIndex]; onConfirm(course.id, course.code, selectedDate, selectedTime, durationMinutes.toIntOrNull() ?: 60, false, null) } }, enabled = courses.isNotEmpty() && durationMinutes.isNotEmpty()) { Text("Schedule") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })

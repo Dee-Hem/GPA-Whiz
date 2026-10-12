@@ -47,7 +47,7 @@ fun CgpaProgressionChartCard(
     gradingScale: Double,
     modifier: Modifier = Modifier
 ) {
-    // 1. Compute cumulative CGPA after each completed semester
+    // 1. Compute cumulative GPA (CGPA) after each completed semester
     val completedSemesters = remember(semesters, courses) {
         semesters
             .filter { sem ->
@@ -193,7 +193,7 @@ fun CgpaProgressionChartCard(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                             Text(
-                                text = "Add course scores in the Courses tab to track your cumulative CGPA trend over time.",
+                                text = "Add course scores in the Courses tab to track your cumulative GPA (CGPA) trend over time.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

@@ -133,6 +133,16 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         _themeMode.value = mode
     }
 
+    // Biometric / App Lock Preference
+    private val _biometricEnabled = MutableStateFlow(currencyPrefs.getBoolean("biometric_lock_enabled", false))
+    val biometricEnabled: StateFlow<Boolean> = _biometricEnabled.asStateFlow()
+
+    fun setBiometricEnabled(enabled: Boolean) {
+        currencyPrefs.edit().putBoolean("biometric_lock_enabled", enabled).apply()
+        _biometricEnabled.value = enabled
+        _uiMessage.value = if (enabled) "Biometric App Lock enabled" else "Biometric App Lock disabled"
+    }
+
     private val _defaultCurrency = MutableStateFlow(
         currencyPrefs.getString("base_currency", "NGN")?.let { CurrencyConverter.normalizeCurrencyCode(it) } ?: "NGN"
     )
