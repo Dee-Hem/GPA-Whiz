@@ -1,0 +1,10 @@
+New in 1.2.0:
+- Biometric app lock (fingerprint, or your phone's PIN/pattern)
+- "Happening Today" card on the dashboard
+- CGPA progress chart and grade distribution chart
+- Pomodoro focus mode for study sessions
+- Achievement badges
+- CA and exam mark predictor
+- Essay and SOP drafts vault
+- Scholarship checklist templates
+- Course tasks and deadlines
