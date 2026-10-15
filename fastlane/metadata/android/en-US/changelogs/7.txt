@@ -1,0 +1,8 @@
+New in 1.2.1:
+• Export lecture timetable as PDF (weekly grid or daily list)
+• Export exam timetable as PDF
+• Exams can now have an end time
+• Course scores now shown on the transcript PDF
+• Course units added to the timetable exports
+• Times now show in 12-hour AM/PM format everywhere
+• Critical fix: Lecture alarms now re-arm and recover after reboots
