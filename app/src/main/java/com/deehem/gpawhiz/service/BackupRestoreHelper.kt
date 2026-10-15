@@ -11,6 +11,7 @@ object BackupRestoreHelper {
         semesters: List<Semester>,
         courses: List<Course>,
         timetable: List<TimetableSlot>,
+        exams: List<Exam> = emptyList(),
         scholarships: List<Scholarship> = emptyList(),
         requirements: List<ScholarshipRequirement> = emptyList(),
         timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
@@ -18,7 +19,7 @@ object BackupRestoreHelper {
         drafts: List<EssayDraft> = emptyList()
     ): String {
         val root = JSONObject()
-        root.put("schemaVersion", 3)
+        root.put("schemaVersion", 4)
         root.put("exportedAt", System.currentTimeMillis())
 
         // Profile block
@@ -86,6 +87,22 @@ object BackupRestoreHelper {
             timetableArray.put(slotJson)
         }
         root.put("timetable", timetableArray)
+
+        val examsArray = JSONArray()
+        for (exam in exams) {
+            examsArray.put(JSONObject().apply {
+                put("id", exam.id)
+                put("courseId", exam.courseId)
+                put("courseCode", exam.courseCode)
+                put("date", exam.date)
+                put("time", exam.time)
+                put("alertEnabled", exam.alertEnabled)
+                if (exam.endTime != null) put("endTime", exam.endTime)
+                put("venue", exam.venue)
+                put("seatNumber", exam.seatNumber)
+            })
+        }
+        root.put("exams", examsArray)
 
         // Scholarships list
         val scholarshipsArray = JSONArray()
@@ -266,6 +283,29 @@ object BackupRestoreHelper {
             )
         }
 
+        val examsList = mutableListOf<Exam>()
+        val examsArray = root.optJSONArray("exams")
+        if (examsArray != null) {
+            for (i in 0 until examsArray.length()) {
+                val item = examsArray.getJSONObject(i)
+                examsList.add(
+                    Exam(
+                        id = item.optInt("id", 0),
+                        courseId = item.optInt("courseId", 0),
+                        courseCode = item.optString("courseCode", ""),
+                        date = item.optLong("date", 0L),
+                        time = item.optString("time", "09:00"),
+                        alertEnabled = item.optBoolean("alertEnabled", true),
+                        endTime = if (item.has("endTime") && !item.isNull("endTime")) {
+                            item.optString("endTime").takeIf { it.isNotBlank() }
+                        } else null,
+                        venue = item.optString("venue", ""),
+                        seatNumber = item.optString("seatNumber", "")
+                    )
+                )
+            }
+        }
+
         // Parse Scholarships (if present, backward compatible)
         val scholarshipsList = mutableListOf<Scholarship>()
         if (root.has("scholarships")) {
@@ -389,6 +429,7 @@ object BackupRestoreHelper {
             semesters = semestersList,
             courses = coursesList,
             timetable = timetableList,
+            exams = if (root.has("exams")) examsList else null,
             scholarships = scholarshipsList,
             requirements = requirementsList,
             timelineEvents = timelineList,
@@ -403,6 +444,7 @@ data class BackupData(
     val semesters: List<Semester>,
     val courses: List<Course>,
     val timetable: List<TimetableSlot>,
+    val exams: List<Exam>? = null,
     val scholarships: List<Scholarship> = emptyList(),
     val requirements: List<ScholarshipRequirement> = emptyList(),
     val timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),

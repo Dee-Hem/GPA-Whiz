@@ -64,6 +64,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     val timetableSlots by viewModel.timetableSlots.collectAsState()
+    val exams by viewModel.exams.collectAsState()
     val courses by viewModel.courses.collectAsState()
     val semesters by viewModel.semesters.collectAsState()
     val studentProfile by viewModel.studentProfile.collectAsState()
@@ -563,7 +564,77 @@ fun SettingsScreen(
             )
         }
 
-        // 4. Data Portability Backup & Restores Blocks
+        // 4. Exam Timetable Export
+        var showExamTimetableExportDialog by remember { mutableStateOf(false) }
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Exam Timetable",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Save your scheduled exams as a printable PDF",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { showExamTimetableExportDialog = true },
+                    enabled = exams.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("export_exam_timetable_pdf_button")
+                ) {
+                    Text("Export exam timetable (PDF)")
+                }
+                if (exams.isEmpty()) {
+                    Text(
+                        text = "Add exams in the Exams tab first",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp).testTag("exam_timetable_export_empty_hint")
+                    )
+                }
+            }
+        }
+
+        if (showExamTimetableExportDialog) {
+            ExamTimetableExportDialog(
+                viewModel = viewModel,
+                onDismiss = { showExamTimetableExportDialog = false }
+            )
+        }
+
+        // 5. Data Portability Backup & Restores Blocks
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

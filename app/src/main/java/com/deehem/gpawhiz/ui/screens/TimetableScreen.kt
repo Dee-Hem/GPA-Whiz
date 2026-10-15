@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,6 +31,10 @@ import com.deehem.gpawhiz.data.Exam
 import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.StudyStatus
 import com.deehem.gpawhiz.data.TimetableSlot
+import com.deehem.gpawhiz.service.formatExamDuration
+import com.deehem.gpawhiz.service.formatExamTimeRange
+import com.deehem.gpawhiz.service.isExamEndTimeValid
+import com.deehem.gpawhiz.service.isExamInProgress
 import com.deehem.gpawhiz.service.SystemSchedulerWrapper
 import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
 import java.text.SimpleDateFormat
@@ -156,6 +162,7 @@ fun LecturesTab(viewModel: GpaViewModel, onDeleteSlot: (TimetableSlot) -> Unit) 
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var examToEdit by remember { mutableStateOf<Exam?>(null) }
     val daysMap = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -467,8 +474,14 @@ fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
 
         val now = System.currentTimeMillis()
         
-        val upcomingExams = exams.filter { getFullTimestamp(it.date, it.time) >= now }.sortedBy { getFullTimestamp(it.date, it.time) }
-        val pastExams = exams.filter { getFullTimestamp(it.date, it.time) < now }.sortedByDescending { getFullTimestamp(it.date, it.time) }
+        val upcomingExams = exams.filter {
+            getFullTimestamp(it.date, it.time) >= now ||
+                isExamInProgress(it.date, it.time, it.endTime, now)
+        }.sortedBy { getFullTimestamp(it.date, it.time) }
+        val pastExams = exams.filter { exam ->
+            getFullTimestamp(exam.date, exam.time) < now &&
+                !isExamInProgress(exam.date, exam.time, exam.endTime, now)
+        }.sortedByDescending { getFullTimestamp(it.date, it.time) }
 
         if (exams.isEmpty()) {
             EmptyStatePlaceholder(
@@ -486,6 +499,7 @@ fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
                     items(upcomingExams) { exam ->
                         ExamCard(
                             exam = exam,
+                            onEdit = { examToEdit = exam },
                             onDelete = { onDeleteExam(exam) },
                             onToggleAlarm = { viewModel.toggleExamAlert(exam) },
                             onCalendarExport = { viewModel.exportExamToCalendar(exam) }
@@ -499,6 +513,7 @@ fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
                         ExamCard(
                             exam = exam,
                             isPast = true,
+                            onEdit = { examToEdit = exam },
                             onDelete = { onDeleteExam(exam) },
                             onToggleAlarm = { },
                             onCalendarExport = { }
@@ -509,13 +524,23 @@ fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
         }
     }
 
-    if (showAddDialog) {
+    if (showAddDialog || examToEdit != null) {
+        val initialExam = examToEdit
         AddExamDialog(
-            courses = currentSemesterCourses,
-            onDismiss = { showAddDialog = false },
-            onConfirm = { courseId, code, date, time ->
-                viewModel.addExam(courseId, code, date, time)
+            courses = if (initialExam == null) currentSemesterCourses else allCourses,
+            initialExam = initialExam,
+            onDismiss = {
                 showAddDialog = false
+                examToEdit = null
+            },
+            onConfirm = { courseId, code, date, time, endTime, venue, seatNumber ->
+                if (initialExam == null) {
+                    viewModel.addExam(courseId, code, date, time, endTime, venue, seatNumber)
+                } else {
+                    viewModel.updateExamDetails(initialExam, endTime, venue, seatNumber)
+                }
+                showAddDialog = false
+                examToEdit = null
             }
         )
     }
@@ -658,26 +683,36 @@ fun AddLectureDialog(
 @Composable
 fun AddExamDialog(
     courses: List<com.deehem.gpawhiz.data.Course>,
+    initialExam: Exam? = null,
     onDismiss: () -> Unit,
-    onConfirm: (Int, String, Long, String) -> Unit
+    onConfirm: (Int, String, Long, String, String?, String, String) -> Unit
 ) {
     val context = LocalContext.current
-    var selectedCourseIndex by remember { mutableStateOf(0) }
-    var selectedDate by remember { mutableStateOf(System.currentTimeMillis()) }
-    var selectedTime by remember { mutableStateOf("09:00") }
+    var selectedCourseIndex by remember(initialExam, courses) {
+        mutableStateOf(courses.indexOfFirst { it.id == initialExam?.courseId }.coerceAtLeast(0))
+    }
+    var selectedDate by remember(initialExam) { mutableStateOf(initialExam?.date ?: System.currentTimeMillis()) }
+    var selectedTime by remember(initialExam) { mutableStateOf(initialExam?.time ?: "09:00") }
+    var endTime by remember(initialExam) { mutableStateOf(initialExam?.endTime) }
+    var venue by remember(initialExam) { mutableStateOf(initialExam?.venue.orEmpty()) }
+    var seatNumber by remember(initialExam) { mutableStateOf(initialExam?.seatNumber.orEmpty()) }
     var expandedCourse by remember { mutableStateOf(false) }
+    val validEndTime = isExamEndTimeValid(selectedTime, endTime)
 
     val dateFormat = SimpleDateFormat("EEE, MMM dd, yyyy", Locale.getDefault())
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Schedule Examination") },
+        title = { Text(if (initialExam == null) "Schedule Examination" else "Edit Exam Details") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 if (courses.isEmpty()) {
                     Text("No courses found. Please add courses first in the Courses tab.", color = MaterialTheme.colorScheme.error)
                 } else {
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    if (initialExam == null) Box(modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(onClick = { expandedCourse = true }, modifier = Modifier.fillMaxWidth()) {
                             Text("Course: ${courses[selectedCourseIndex].code}")
                         }
@@ -689,41 +724,83 @@ fun AddExamDialog(
                                 )
                             }
                         }
+                    } else {
+                        Text("Course: ${initialExam.courseCode}")
                     }
 
-                    OutlinedCard(
-                        onClick = {
-                            val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
-                            DatePickerDialog(context, { _, y, m, d ->
-                        val newCal = Calendar.getInstance().apply { 
-                            set(y, m, d, 0, 0, 0)
-                            set(Calendar.MILLISECOND, 0)
+                    if (initialExam == null) {
+                        OutlinedCard(
+                            onClick = {
+                                val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                                DatePickerDialog(context, { _, year, month, day ->
+                                    selectedDate = Calendar.getInstance().apply {
+                                        set(year, month, day, 0, 0, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.heightIn(min = 48.dp).padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.DateRange, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(text = dateFormat.format(Date(selectedDate)))
+                            }
                         }
-                        selectedDate = newCal.timeInMillis
-                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.DateRange, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(text = dateFormat.format(Date(selectedDate)))
-                }
-            }
-
-            OutlinedCard(
-                onClick = {
-                    val parts = selectedTime.split(":")
-                    TimePickerDialog(context, { _, h, m -> selectedTime = String.format("%02d:%02d", h, m) }, parts[0].toInt(), parts[1].toInt(), false).show()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Notifications, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(text = "Exam Time: $selectedTime")
-                        }
+                    } else {
+                        Text(dateFormat.format(Date(selectedDate)), style = MaterialTheme.typography.bodyMedium)
                     }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                        if (initialExam == null) {
+                            TimeSelectionBox(
+                                label = "Start time",
+                                time = selectedTime,
+                                onTimeSelected = { selectedTime = it },
+                                modifier = Modifier.weight(1f).testTag("exam_start_time_picker")
+                            )
+                        } else {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Start time",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(selectedTime, modifier = Modifier.padding(top = 12.dp))
+                            }
+                        }
+                        OptionalExamEndTimeField(
+                            time = endTime,
+                            onTimeSelected = { endTime = it },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (!validEndTime) {
+                        Text(
+                            "End time must be after the start time.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("exam_end_time_error")
+                        )
+                    }
+                    OutlinedTextField(
+                        value = venue,
+                        onValueChange = { venue = it },
+                        label = { Text("Venue") },
+                        modifier = Modifier.fillMaxWidth().testTag("exam_venue_field"),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = seatNumber,
+                        onValueChange = { seatNumber = it },
+                        label = { Text("Seat number") },
+                        modifier = Modifier.fillMaxWidth().testTag("exam_seat_number_field"),
+                        singleLine = true
+                    )
                 }
             }
         },
@@ -732,12 +809,12 @@ fun AddExamDialog(
                 onClick = {
                     if (courses.isNotEmpty()) {
                         val course = courses[selectedCourseIndex]
-                        onConfirm(course.id, course.code, selectedDate, selectedTime)
+                        onConfirm(course.id, course.code, selectedDate, selectedTime, endTime, venue, seatNumber)
                     }
                 },
-                enabled = courses.isNotEmpty()
+                enabled = courses.isNotEmpty() && validEndTime
             ) {
-                Text("Schedule Exam")
+                Text(if (initialExam == null) "Schedule Exam" else "Save")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -745,9 +822,62 @@ fun AddExamDialog(
 }
 
 @Composable
+private fun OptionalExamEndTimeField(
+    time: String?,
+    onTimeSelected: (String?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Column(modifier = modifier) {
+        Text(
+            "End time (optional)",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .heightIn(min = 48.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable {
+                        val parts = (time ?: "10:00").split(":")
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                onTimeSelected(String.format("%02d:%02d", hour, minute))
+                            },
+                            parts[0].toIntOrNull() ?: 10,
+                            parts[1].toIntOrNull() ?: 0,
+                            false
+                        ).show()
+                    }
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                    .testTag("exam_end_time_picker"),
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Text(time ?: "Not set", style = MaterialTheme.typography.bodyMedium)
+            }
+            if (time != null) {
+                IconButton(
+                    onClick = { onTimeSelected(null) },
+                    modifier = Modifier.testTag("exam_end_time_clear")
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear end time")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun ExamCard(
     exam: Exam,
     isPast: Boolean = false,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     onToggleAlarm: () -> Unit,
     onCalendarExport: () -> Unit
@@ -757,9 +887,12 @@ fun ExamCard(
     
     // Countdown calculation
     val now = System.currentTimeMillis()
-    val fullTs = getFullTimestamp(exam.date, exam.time)
-    val daysLeft = getDaysDiff(now, exam.date)
+    val startTimestamp = getFullTimestamp(exam.date, exam.time)
+    val daysLeft = getDaysDiff(now, startTimestamp)
     val context = LocalContext.current
+    val inProgress = isExamInProgress(exam.date, exam.time, exam.endTime, now)
+    val timeRange = formatExamTimeRange(exam.time, exam.endTime)
+    val duration = formatExamDuration(exam.time, exam.endTime)
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -771,31 +904,52 @@ fun ExamCard(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = exam.courseCode, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = if (isPast) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary)
-                    Text(text = "$dateStr • ${exam.time}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = "$dateStr • $timeRange${duration?.let { " ($it)" }.orEmpty()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (exam.venue.isNotBlank() || exam.seatNumber.isNotBlank()) {
+                        Text(
+                            text = listOfNotNull(
+                                exam.venue.takeIf { it.isNotBlank() },
+                                exam.seatNumber.takeIf { it.isNotBlank() }?.let { "Seat $it" }
+                            ).joinToString(" • "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     
                     if (!isPast) {
                         Spacer(modifier = Modifier.height(4.dp))
                         val countdownText = when {
+                            inProgress -> "In progress"
                             daysLeft == 0 -> "TODAY"
                             daysLeft == 1 -> "Tomorrow"
                             daysLeft < 0 -> "Happening now!"
                             else -> "$daysLeft days left"
                         }
                         Surface(
-                            color = if (daysLeft <= 3) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
+                            color = if (inProgress || daysLeft <= 3) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer,
                             shape = RoundedCornerShape(4.dp)
                         ) {
                             Text(
-                                text = countdownText.uppercase(),
+                                text = if (inProgress) countdownText else countdownText.uppercase(),
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (daysLeft <= 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onPrimaryContainer
+                                color = if (inProgress || daysLeft <= 3) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
                     }
                 }
 
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier.testTag("edit_exam_${exam.id}")
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit exam", tint = MaterialTheme.colorScheme.primary)
+                }
                 if (!isPast) {
                     Row {
                         IconButton(onClick = onCalendarExport) {
@@ -916,7 +1070,7 @@ fun TimeSelectionBox(label: String, time: String, onTimeSelected: (String) -> Un
     Column(modifier = modifier) {
         Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(4.dp))
-        Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { timePickerDialog.show() }.padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
+        Box(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { timePickerDialog.show() }.padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
             Text(text = time, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         }
     }

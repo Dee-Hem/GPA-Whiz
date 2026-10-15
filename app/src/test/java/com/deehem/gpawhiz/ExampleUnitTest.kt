@@ -3,17 +3,23 @@ package com.deehem.gpawhiz
 import com.deehem.gpawhiz.data.AssessmentComponent
 import com.deehem.gpawhiz.data.Course
 import com.deehem.gpawhiz.data.EssayDraft
+import com.deehem.gpawhiz.data.Exam
 import com.deehem.gpawhiz.data.Semester
 import com.deehem.gpawhiz.data.StudentProfile
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.service.BackupRestoreHelper
 import com.deehem.gpawhiz.service.GpaCalcService
 import com.deehem.gpawhiz.service.OfficialTranscriptPdfGenerator
+import com.deehem.gpawhiz.service.formatExamDuration
+import com.deehem.gpawhiz.service.formatExamTimeRange
+import com.deehem.gpawhiz.service.isExamEndTimeValid
+import com.deehem.gpawhiz.service.isExamInProgress
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.Calendar
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -82,6 +88,7 @@ class ExampleUnitTest {
         assertEquals("CSC 101", parsed.courses[0].code)
         assertNull(parsed.courses[0].assessmentBreakdown)
         assertTrue(parsed.drafts.isEmpty())
+        assertNull(parsed.exams)
     }
 
     @Test
@@ -123,6 +130,76 @@ class ExampleUnitTest {
     }
 
     @Test
+    fun examTimeValidationFormattingAndProgressUseOptionalEndTime() {
+        assertTrue(isExamEndTimeValid("09:00", null))
+        assertTrue(isExamEndTimeValid("09:00", ""))
+        assertTrue(isExamEndTimeValid("09:00", "09:01"))
+        assertFalse(isExamEndTimeValid("09:00", "09:00"))
+        assertFalse(isExamEndTimeValid("09:00", "08:59"))
+
+        assertEquals("09:00", formatExamTimeRange("09:00", null))
+        assertEquals("09:00 - 11:00", formatExamTimeRange("09:00", "11:00"))
+        assertEquals("2h", formatExamDuration("09:00", "11:00"))
+        assertEquals("1h 30m", formatExamDuration("09:00", "10:30"))
+        assertNull(formatExamDuration("09:00", null))
+
+        val date = Calendar.getInstance().apply {
+            set(2027, Calendar.JANUARY, 12, 0, 0, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val start = date + 9 * 60 * 60 * 1000L
+        assertFalse(isExamInProgress(date, "09:00", "11:00", start - 1))
+        assertTrue(isExamInProgress(date, "09:00", "11:00", start))
+        assertTrue(isExamInProgress(date, "09:00", "11:00", start + 60 * 60 * 1000L))
+        assertFalse(isExamInProgress(date, "09:00", "11:00", start + 2 * 60 * 60 * 1000L))
+        assertFalse(isExamInProgress(date, "09:00", null, start))
+    }
+
+    @Test
+    fun examBackupRoundTripPreservesEndTimeAndOptionalFields() {
+        val profile = StudentProfile()
+        val course = Course(
+            id = 4,
+            semesterId = 1,
+            code = "CSC 204",
+            title = "Algorithms",
+            units = 3,
+            score = 0,
+            grade = "F"
+        )
+        val examWithEnd = Exam(
+            id = 8,
+            courseId = course.id,
+            courseCode = course.code,
+            date = 1_800_000_000_000L,
+            time = "09:00",
+            endTime = "11:00",
+            venue = "Hall A",
+            seatNumber = "B12"
+        )
+        val examWithoutEnd = examWithEnd.copy(id = 9, endTime = null, venue = "", seatNumber = "")
+
+        val json = BackupRestoreHelper.exportToJson(
+            profile = profile,
+            semesters = listOf(Semester(id = 1, name = "Semester 1")),
+            courses = listOf(course),
+            timetable = emptyList(),
+            exams = listOf(examWithEnd, examWithoutEnd)
+        )
+        val restored = BackupRestoreHelper.parseBackupJson(json).exams.orEmpty()
+
+        assertEquals(2, restored.size)
+        assertEquals(examWithEnd, restored[0])
+        assertNull(restored[1].endTime)
+        assertEquals("", restored[1].venue)
+        assertEquals("", restored[1].seatNumber)
+
+        val oldExamBackup = json.replace("\"endTime\": \"11:00\",", "")
+        val restoredWithoutEndField = BackupRestoreHelper.parseBackupJson(oldExamBackup).exams.first()
+        assertNull(restoredWithoutEndField.endTime)
+    }
+
+    @Test
     fun testCgpaProgressionCalculation() {
         val sem1 = Semester(id = 1, name = "Year 1 Sem 1", rank = 1)
         val sem2 = Semester(id = 2, name = "Year 1 Sem 2", rank = 2)
@@ -138,4 +215,3 @@ class ExampleUnitTest {
         assertEquals(4.5, cgpa2, 0.01)
     }
 }
-

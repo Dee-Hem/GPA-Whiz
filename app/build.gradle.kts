@@ -6,6 +6,10 @@ plugins {
   alias(libs.plugins.secrets)
 }
 
+ksp {
+  arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 android {
   namespace = "com.deehem.gpawhiz"
   compileSdk { version = release(36) { minorApiLevel = 1 } }

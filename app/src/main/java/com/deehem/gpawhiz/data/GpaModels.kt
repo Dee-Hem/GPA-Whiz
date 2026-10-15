@@ -4,6 +4,7 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 
 @Entity(tableName = "student_profile")
 data class StudentProfile(
@@ -145,5 +146,8 @@ data class Exam(
     val courseCode: String,
     val date: Long,
     val time: String,
-    val alertEnabled: Boolean = true
+    val alertEnabled: Boolean = true,
+    @ColumnInfo(defaultValue = "NULL") val endTime: String? = null,
+    @ColumnInfo(defaultValue = "''") val venue: String = "",
+    @ColumnInfo(defaultValue = "''") val seatNumber: String = ""
 )

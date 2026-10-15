@@ -22,8 +22,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         Exam::class,
         EssayDraft::class
     ],
-    version = 8,
-    exportSchema = false
+    version = 9,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun gpaDao(): GpaDao
@@ -32,6 +32,14 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile
         private var INSTANCE: AppDatabase? = null
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE exams ADD COLUMN endTime TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE exams ADD COLUMN venue TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE exams ADD COLUMN seatNumber TEXT NOT NULL DEFAULT ''")
+            }
+        }
 
         val MIGRATION_7_8 = object : Migration(7, 8) {
             override fun migrate(database: SupportSQLiteDatabase) {
@@ -143,7 +151,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "gpa_whiz_database"
                 )
-                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

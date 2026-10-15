@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.Exam
+import com.deehem.gpawhiz.service.formatExamTimeRange
+import com.deehem.gpawhiz.service.isExamInProgress
 import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.StudyStatus
 import com.deehem.gpawhiz.data.TimetableSlot
@@ -408,6 +410,12 @@ fun HappeningTodayCard(
                     )
 
                     upcomingExams.forEach { (exam, daysRemaining) ->
+                        val examInProgress = isExamInProgress(
+                            exam.date,
+                            exam.time,
+                            exam.endTime,
+                            System.currentTimeMillis()
+                        )
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = Color(0xFFDB4437).copy(alpha = 0.08f),
@@ -429,7 +437,7 @@ fun HappeningTodayCard(
                                         color = Color(0xFFDB4437)
                                     )
                                     Text(
-                                        text = "Time: ${exam.time}",
+                                        text = "Time: ${formatExamTimeRange(exam.time, exam.endTime)}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -437,10 +445,12 @@ fun HappeningTodayCard(
 
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = if (daysRemaining <= 1) Color(0xFFDB4437) else Color(0xFFF4B400)
+                                    color = if (examInProgress || daysRemaining <= 1) {
+                                        Color(0xFFDB4437)
+                                    } else Color(0xFFF4B400)
                                 ) {
                                     Text(
-                                        text = when (daysRemaining) {
+                                        text = if (examInProgress) "Now" else when (daysRemaining) {
                                             0 -> "TODAY"
                                             1 -> "TOMORROW"
                                             else -> "$daysRemaining DAYS"

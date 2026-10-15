@@ -704,6 +704,21 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun exportExamTimetablePdf(outputStream: OutputStream, upcomingOnly: Boolean) {
+        try {
+            ExamTimetablePdfGenerator.generate(
+                student = studentProfile.value,
+                exams = exams.value,
+                courses = courses.value,
+                upcomingOnly = upcomingOnly,
+                outputStream = outputStream
+            )
+            _uiMessage.value = "Exam timetable PDF exported."
+        } catch (e: Exception) {
+            _uiMessage.value = "Exam timetable PDF export failed: ${e.message}"
+        }
+    }
+
     fun exportScholarshipsPdf(outputStream: OutputStream, activeOnly: Boolean = false) {
         try {
             val list = if (activeOnly) {
@@ -796,6 +811,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             semesters = semesters.value,
             courses = courses.value,
             timetable = timetableSlots.value,
+            exams = exams.value,
             scholarships = scholarships.value,
             requirements = scholarshipRequirements.value,
             timelineEvents = scholarshipTimelineEvents.value,
@@ -812,6 +828,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 
                 // Nuclear reset tables
                 gpaDao.clearAllSemesters()
+                if (data.exams != null) {
+                    gpaDao.clearAllExams()
+                }
                 gpaDao.clearAllCourses()
                 gpaDao.clearAllTimetableSlots()
                 scholarshipDao.clearAllScholarships()
@@ -830,6 +849,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 for (slot in data.timetable) {
                     gpaDao.insertTimetableSlot(slot)
+                }
+                data.exams?.forEach { exam ->
+                    gpaDao.insertExam(exam)
                 }
 
                 // Insert scholarships & related entities
@@ -977,20 +999,38 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // EXAMS CRUD
-    fun addExam(courseId: Int, courseCode: String, date: Long, time: String) {
+    fun addExam(
+        courseId: Int,
+        courseCode: String,
+        date: Long,
+        time: String,
+        endTime: String?,
+        venue: String,
+        seatNumber: String
+    ) {
         viewModelScope.launch(Dispatchers.IO) {
             val exam = Exam(
                 courseId = courseId,
                 courseCode = courseCode,
                 date = date,
                 time = time,
-                alertEnabled = true
+                alertEnabled = true,
+                endTime = endTime,
+                venue = venue,
+                seatNumber = seatNumber
             )
             val id = gpaDao.insertExam(exam)
             launch(Dispatchers.Main) {
                 AlarmScheduler.scheduleExamAlarm(getApplication(), exam.copy(id = id.toInt()))
             }
             _uiMessage.value = "Exam for $courseCode added."
+        }
+    }
+
+    fun updateExamDetails(exam: Exam, endTime: String?, venue: String, seatNumber: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            gpaDao.updateExam(exam.copy(endTime = endTime, venue = venue, seatNumber = seatNumber))
+            _uiMessage.value = "Exam details updated."
         }
     }
 
