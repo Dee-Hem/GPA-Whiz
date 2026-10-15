@@ -195,7 +195,7 @@ class ExampleUnitTest {
         assertEquals("", restored[1].seatNumber)
 
         val oldExamBackup = json.replace("\"endTime\": \"11:00\",", "")
-        val restoredWithoutEndField = BackupRestoreHelper.parseBackupJson(oldExamBackup).exams.first()
+        val restoredWithoutEndField = BackupRestoreHelper.parseBackupJson(oldExamBackup).exams.orEmpty().first()
         assertNull(restoredWithoutEndField.endTime)
     }
 

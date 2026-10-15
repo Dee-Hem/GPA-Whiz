@@ -3,7 +3,6 @@ package com.deehem.gpawhiz
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.deehem.gpawhiz.data.AppDatabase
 import android.database.sqlite.SQLiteDatabase
-import androidx.sqlite.db.SupportSQLiteDatabase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

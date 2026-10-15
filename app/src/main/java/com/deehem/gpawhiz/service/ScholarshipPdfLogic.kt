@@ -26,10 +26,8 @@ data class ScholarshipPdfStatusCategory(
 private val scholarshipPdfStatusCategories = listOf(
     ScholarshipPdfStatusCategory("Not Started", setOf(ScholarshipStatus.NOT_STARTED)),
     ScholarshipPdfStatusCategory("In Preparation", setOf(ScholarshipStatus.PREPARING)),
-    ScholarshipPdfStatusCategory(
-        "In Progress",
-        setOf(ScholarshipStatus.IN_PROGRESS, ScholarshipStatus.READY_TO_SUBMIT)
-    ),
+    ScholarshipPdfStatusCategory("In Progress", setOf(ScholarshipStatus.IN_PROGRESS)),
+    ScholarshipPdfStatusCategory("Ready to Submit", setOf(ScholarshipStatus.READY_TO_SUBMIT)),
     ScholarshipPdfStatusCategory(
         "Submitted",
         setOf(ScholarshipStatus.SUBMITTED, ScholarshipStatus.ASSESSMENT, ScholarshipStatus.INTERVIEW)

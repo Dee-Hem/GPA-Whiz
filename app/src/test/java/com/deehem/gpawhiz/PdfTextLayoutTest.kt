@@ -104,20 +104,6 @@ class PdfTextLayoutTest {
             listOf(values[0], values[1], values[2], values[3], values[4])
         }
 
-        @Test
-        fun timetableTimeColumnFitsWidestFormattedRangeAndKeepsPageWidthAligned() {
-            val left = 40f
-            val right = 555f
-            val ranges = listOf("8:00 - 9:00\u00A0AM", "11:00\u00A0AM - 12:00\u00A0PM")
-            val minimumTimeWidth = timeColumnMinimumWidth(ranges, 8f, 8f, measure)
-            val dailyEdges = dailyTimetableColumnEdges(left, right, minimumTimeWidth)
-            val examEdges = examTimetableColumnEdges(left, right, minimumTimeWidth)
-
-            assertTrue(dailyEdges[1] - dailyEdges[0] + 0.001f >= minimumTimeWidth)
-            assertTrue(examEdges[1] - examEdges[0] + 0.001f >= minimumTimeWidth)
-            assertEquals(right - left, dailyEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
-            assertEquals(right - left, examEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
-        }
         val examEdges = examTimetableColumnEdges(left, right)
         val dailyEdges = dailyTimetableColumnEdges(left, right)
 
@@ -155,6 +141,21 @@ class PdfTextLayoutTest {
 
         assertRowsFit(cases, examEdges, 8f)
         assertRowsFit(dailyCases, dailyEdges, 10f)
+    }
+
+    @Test
+    fun timetableTimeColumnFitsWidestFormattedRangeAndKeepsPageWidthAligned() {
+        val left = 40f
+        val right = 555f
+        val ranges = listOf("8:00 - 9:00\u00A0AM", "11:00\u00A0AM - 12:00\u00A0PM")
+        val minimumTimeWidth = timeColumnMinimumWidth(ranges, 8f, 8f, measure)
+        val dailyEdges = dailyTimetableColumnEdges(left, right, minimumTimeWidth)
+        val examEdges = examTimetableColumnEdges(left, right, minimumTimeWidth)
+
+        assertTrue(dailyEdges[1] - dailyEdges[0] + 0.001f >= minimumTimeWidth)
+        assertTrue(examEdges[1] - examEdges[0] + 0.001f >= minimumTimeWidth)
+        assertEquals(right - left, dailyEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
+        assertEquals(right - left, examEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
     }
 
     @Test

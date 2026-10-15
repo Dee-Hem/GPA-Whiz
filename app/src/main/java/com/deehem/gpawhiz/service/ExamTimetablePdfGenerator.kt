@@ -119,7 +119,7 @@ object ExamTimetablePdfGenerator {
                             top = y,
                             isPast = isExamPast(exam, nowMillis),
                             hasClash = exam.id in clashExamIds,
-                            columns = columns
+                            edges = columns
                         )
                         y += row.wrapped.height
                     }
