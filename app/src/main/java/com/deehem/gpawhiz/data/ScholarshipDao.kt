@@ -7,11 +7,14 @@ import kotlinx.coroutines.flow.Flow
 interface ScholarshipDao {
 
     // Scholarships
-    @Query("SELECT * FROM scholarships ORDER BY dateAdded DESC")
+    @Query("SELECT * FROM scholarships ORDER BY deadlineDate ASC, id DESC")
     fun getAllScholarships(): Flow<List<Scholarship>>
 
     @Query("SELECT * FROM scholarships WHERE id = :id LIMIT 1")
-    suspend fun getScholarshipById(id: Int): Scholarship?
+    fun getScholarshipById(id: Int): Flow<Scholarship?>
+
+    @Query("SELECT * FROM scholarships WHERE id = :id LIMIT 1")
+    suspend fun getScholarshipDirect(id: Int): Scholarship?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertScholarship(scholarship: Scholarship): Long
@@ -22,15 +25,21 @@ interface ScholarshipDao {
     @Delete
     suspend fun deleteScholarship(scholarship: Scholarship)
 
+    @Query("DELETE FROM scholarships WHERE id = :id")
+    suspend fun deleteScholarshipById(id: Int)
+
     @Query("DELETE FROM scholarships")
     suspend fun clearAllScholarships()
 
     // Requirements
-    @Query("SELECT * FROM scholarship_requirements ORDER BY deadline ASC, id ASC")
+    @Query("SELECT * FROM scholarship_requirements ORDER BY id ASC")
     fun getAllRequirements(): Flow<List<ScholarshipRequirement>>
 
-    @Query("SELECT * FROM scholarship_requirements WHERE scholarshipId = :scholarshipId ORDER BY deadline ASC, id ASC")
+    @Query("SELECT * FROM scholarship_requirements WHERE scholarshipId = :scholarshipId ORDER BY id ASC")
     fun getRequirementsForScholarship(scholarshipId: Int): Flow<List<ScholarshipRequirement>>
+
+    @Query("SELECT * FROM scholarship_requirements WHERE scholarshipId = :scholarshipId ORDER BY id ASC")
+    suspend fun getRequirementsForScholarshipDirect(scholarshipId: Int): List<ScholarshipRequirement>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRequirement(requirement: ScholarshipRequirement): Long
@@ -48,11 +57,14 @@ interface ScholarshipDao {
     suspend fun clearAllRequirements()
 
     // Timeline Events
-    @Query("SELECT * FROM scholarship_timeline_events ORDER BY date ASC, id ASC")
+    @Query("SELECT * FROM scholarship_timeline_events ORDER BY date DESC, id DESC")
     fun getAllTimelineEvents(): Flow<List<ScholarshipTimelineEvent>>
 
-    @Query("SELECT * FROM scholarship_timeline_events WHERE scholarshipId = :scholarshipId ORDER BY date ASC, id ASC")
+    @Query("SELECT * FROM scholarship_timeline_events WHERE scholarshipId = :scholarshipId ORDER BY date DESC, id DESC")
     fun getTimelineEventsForScholarship(scholarshipId: Int): Flow<List<ScholarshipTimelineEvent>>
+
+    @Query("SELECT * FROM scholarship_timeline_events WHERE scholarshipId = :scholarshipId ORDER BY date DESC, id DESC")
+    suspend fun getTimelineEventsForScholarshipDirect(scholarshipId: Int): List<ScholarshipTimelineEvent>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTimelineEvent(event: ScholarshipTimelineEvent): Long
@@ -73,8 +85,11 @@ interface ScholarshipDao {
     @Query("SELECT * FROM scholarship_reminders ORDER BY reminderTime ASC")
     fun getAllReminders(): Flow<List<ScholarshipReminder>>
 
-    @Query("SELECT * FROM scholarship_reminders WHERE scholarshipId = :scholarshipId")
+    @Query("SELECT * FROM scholarship_reminders WHERE scholarshipId = :scholarshipId ORDER BY reminderTime ASC")
     fun getRemindersForScholarship(scholarshipId: Int): Flow<List<ScholarshipReminder>>
+
+    @Query("SELECT * FROM scholarship_reminders WHERE scholarshipId = :scholarshipId ORDER BY reminderTime ASC")
+    suspend fun getRemindersForScholarshipDirect(scholarshipId: Int): List<ScholarshipReminder>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertReminder(reminder: ScholarshipReminder): Long
@@ -91,9 +106,25 @@ interface ScholarshipDao {
     @Query("DELETE FROM scholarship_reminders")
     suspend fun clearAllReminders()
 
-    // Essay Drafts
+    // Exchange Rates
+    @Query("SELECT * FROM exchange_rates")
+    fun getAllExchangeRates(): Flow<List<ExchangeRate>>
+
+    @Query("SELECT * FROM exchange_rates WHERE fromCurrency = :from AND toCurrency = :to LIMIT 1")
+    suspend fun getExchangeRate(from: String, to: String): ExchangeRate?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExchangeRate(rate: ExchangeRate)
+
+    @Delete
+    suspend fun deleteExchangeRate(rate: ExchangeRate)
+
+    // Essay / SOP Drafts
     @Query("SELECT * FROM essay_drafts ORDER BY lastModified DESC")
     fun getAllDrafts(): Flow<List<EssayDraft>>
+
+    @Query("SELECT * FROM essay_drafts WHERE id = :id LIMIT 1")
+    fun getDraftById(id: Int): Flow<EssayDraft?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertDraft(draft: EssayDraft): Long
@@ -104,19 +135,9 @@ interface ScholarshipDao {
     @Delete
     suspend fun deleteDraft(draft: EssayDraft)
 
+    @Query("DELETE FROM essay_drafts WHERE id = :id")
+    suspend fun deleteDraftById(id: Int)
+
     @Query("DELETE FROM essay_drafts")
     suspend fun clearAllDrafts()
-
-    // Exchange Rates
-    @Query("SELECT * FROM exchange_rates ORDER BY fromCurrency ASC, toCurrency ASC")
-    fun getAllExchangeRates(): Flow<List<ExchangeRate>>
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertExchangeRate(rate: ExchangeRate)
-
-    @Delete
-    suspend fun deleteExchangeRate(rate: ExchangeRate)
-
-    @Query("DELETE FROM exchange_rates")
-    suspend fun clearAllExchangeRates()
 }
