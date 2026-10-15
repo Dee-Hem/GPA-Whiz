@@ -1,61 +1,27 @@
 package com.deehem.gpawhiz
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
-import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.fragment.app.FragmentActivity
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.ViewModelProvider
-import com.deehem.gpawhiz.ui.GpaApp
-import com.deehem.gpawhiz.ui.theme.MyApplicationTheme
-import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
 
 class MainActivity : FragmentActivity() {
+
     private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        // Handle result if needed
-    }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { _ -> }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        
-        requestNotificationPermission()
-
-        // Instantiate our offline view provider
-        val viewModel = ViewModelProvider(this)[GpaViewModel::class.java]
-
         setContent {
-            val themeMode by viewModel.themeMode.collectAsState()
-
-            MyApplicationTheme(themeMode = themeMode) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    GpaApp(viewModel = viewModel)
+            MaterialTheme {
+                Surface {
+                    Text("GPA Whiz")
                 }
-            }
-        }
-    }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
