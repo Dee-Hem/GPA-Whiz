@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.Exam
 import com.deehem.gpawhiz.service.formatExamTimeRange
+import com.deehem.gpawhiz.service.formatStoredTime
+import com.deehem.gpawhiz.service.formatTimeRange
 import com.deehem.gpawhiz.service.isExamInProgress
 import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.StudyStatus
@@ -315,7 +317,7 @@ fun HappeningTodayCard(
                                 }
 
                                 Text(
-                                    text = "${slot.startTime} - ${slot.endTime}",
+                                    text = formatTimeRange(slot.startTime, slot.endTime),
                                     fontWeight = FontWeight.SemiBold,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if (isNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
@@ -357,7 +359,7 @@ fun HappeningTodayCard(
                                         style = MaterialTheme.typography.titleSmall
                                     )
                                     Text(
-                                        text = "${session.startTime} • ${session.durationMinutes} mins",
+                                        text = "${formatStoredTime(session.startTime)} • ${session.durationMinutes} mins",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

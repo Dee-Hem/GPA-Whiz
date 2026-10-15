@@ -9,7 +9,6 @@ import com.deehem.gpawhiz.data.Course
 import com.deehem.gpawhiz.data.Semester
 import com.deehem.gpawhiz.data.StudentProfile
 import java.io.OutputStream
-import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -83,8 +82,8 @@ object PdfExportHelper {
         // Title
         canvas.drawText("GPA WHIZ ACADEMIC TRANSCRIPT PLAN", 25f, yPos, paintTitle)
         yPos += 14f
-        val sdf = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.getDefault())
-        canvas.drawText("Generated: ${sdf.format(Date())} - Playable Offline Backup", 25f, yPos, paintSubtitle)
+        val generatedDate = formatDateTime(Date(), "dd MMMM yyyy", ", ", Locale.getDefault())
+        canvas.drawText("Generated: $generatedDate - Playable Offline Backup", 25f, yPos, paintSubtitle)
         yPos += 20f
 
         canvas.drawLine(25f, yPos, pageWidth - 25f, yPos, paintLine)

@@ -60,8 +60,7 @@ object LectureTimetablePdfGenerator {
         slots: List<TimetableSlot>,
         courses: List<Course>,
         layout: LectureTimetablePdfLayout,
-        outputStream: OutputStream,
-        use24HourTime: Boolean = false
+        outputStream: OutputStream
     ) {
         require(slots.isNotEmpty()) { "There are no lectures to export." }
         slots.forEach(::timedLecture)
@@ -70,10 +69,10 @@ object LectureTimetablePdfGenerator {
         try {
             when (layout) {
                 LectureTimetablePdfLayout.WEEKLY_GRID -> drawWeeklyGrid(
-                    pdfDocument, student, semesterOrSession, slots, courses, generatedAt, use24HourTime
+                    pdfDocument, student, semesterOrSession, slots, courses, generatedAt
                 )
                 LectureTimetablePdfLayout.DAILY_LIST -> drawDailyList(
-                    pdfDocument, student, semesterOrSession, slots, courses, generatedAt, use24HourTime
+                    pdfDocument, student, semesterOrSession, slots, courses, generatedAt
                 )
             }
             pdfDocument.writeTo(outputStream)
@@ -88,8 +87,7 @@ object LectureTimetablePdfGenerator {
         semesterOrSession: String,
         slots: List<TimetableSlot>,
         courses: List<Course>,
-        generatedAt: Date,
-        use24HourTime: Boolean
+        generatedAt: Date
     ) {
         val pageWidth = LectureTimetablePdfStyle.LANDSCAPE_WIDTH
         val pageHeight = LectureTimetablePdfStyle.LANDSCAPE_HEIGHT
@@ -191,7 +189,7 @@ object LectureTimetablePdfGenerator {
         if (samePageRows.isNotEmpty()) drawLegend(canvas, samePageRows, noteTop + legendGap, pageWidth, courseColors)
         val extraLegendPages = if (drawLegendOnGridPage) legendPages.drop(1) else legendPages
         val pageCount = 1 + extraLegendPages.size
-        LectureTimetablePdfStyle.drawFooter(canvas, 1, pageCount, pageWidth, pageHeight, generatedAt, use24HourTime)
+        LectureTimetablePdfStyle.drawFooter(canvas, 1, pageCount, pageWidth, pageHeight, generatedAt)
         document.finishPage(gridPage)
 
         extraLegendPages.forEachIndexed { pageIndex, rows ->
@@ -204,7 +202,7 @@ object LectureTimetablePdfGenerator {
             )
             drawLegend(legendCanvas, rows, pageHeaderBottom + 18f, pageWidth, courseColors)
             LectureTimetablePdfStyle.drawFooter(
-                legendCanvas, pageIndex + 2, pageCount, pageWidth, pageHeight, generatedAt, use24HourTime
+                legendCanvas, pageIndex + 2, pageCount, pageWidth, pageHeight, generatedAt
             )
             document.finishPage(page)
         }
@@ -253,7 +251,7 @@ object LectureTimetablePdfGenerator {
         for ((index, hour) in (hourRange.startHour..hourRange.endHour).withIndex()) {
             val y = hourPositions[index]
             canvas.drawLine(gridLeft, y, gridRight, y, gridLinePaint)
-            canvas.drawText(String.format(Locale.US, "%02d:00", hour), LectureTimetablePdfStyle.MARGIN, y + 2.5f, axisPaint)
+            canvas.drawText(formatHourLabel(hour), LectureTimetablePdfStyle.MARGIN, y + 2.5f, axisPaint)
         }
         canvas.drawRect(gridLeft, gridTop, gridRight, gridBottom, gridOutlinePaint)
         for (index in 1 until days.size) {
@@ -344,7 +342,7 @@ object LectureTimetablePdfGenerator {
         return slots.map { slot ->
             val values = listOf(
                 slot.courseCode.ifBlank { "-" },
-                "${slot.startTime}-${slot.endTime}",
+                formatTimeRange(slot.startTime, slot.endTime),
                 slot.venue.ifBlank { "-" }
             )
             val widths = edges.zipWithNext { first, second -> second - first - 8f }
@@ -515,15 +513,25 @@ object LectureTimetablePdfGenerator {
         semesterOrSession: String,
         slots: List<TimetableSlot>,
         courses: List<Course>,
-        generatedAt: Date,
-        use24HourTime: Boolean
+        generatedAt: Date
     ) {
         val courseById = courses.associateBy { it.id }
         val pageWidth = LectureTimetablePdfStyle.PAGE_WIDTH
         val pageHeight = LectureTimetablePdfStyle.PAGE_HEIGHT
         val summary = lectureSummaryText(slots.size, slots.map { it.dayOfWeek }.distinct().size)
         val bodyTop = LectureTimetablePdfStyle.measureHeaderBottom(student, pageWidth, summary) + 16f
-        val pages = paginateDailySlots(slots, courseById, bodyTop, pageWidth)
+        val timePaint = LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText)
+        val minimumTimeColumnWidth = timeColumnMinimumWidth(
+            slots.map { formatTimeRange(it.startTime, it.endTime) },
+            horizontalPadding = 10f,
+            textSize = 8f
+        ) { text, size -> LectureTimetablePdfStyle.measureText(timePaint, text, size) }
+        val columns = dailyTimetableColumnEdges(
+            LectureTimetablePdfStyle.MARGIN,
+            pageWidth - LectureTimetablePdfStyle.MARGIN,
+            minimumTimeColumnWidth
+        )
+        val pages = paginateDailySlots(slots, courseById, bodyTop, columns)
 
         pages.forEachIndexed { pageIndex, sections ->
             val page = document.startPage(
@@ -542,17 +550,17 @@ object LectureTimetablePdfGenerator {
             for (section in sections) {
                 drawDayHeader(canvas, section.dayOfWeek, section.isContinuation, y, pageWidth)
                 y += DAY_HEADER_HEIGHT
-                drawDailyTableHeader(canvas, y, pageWidth)
+                drawDailyTableHeader(canvas, y, columns)
                 y += TABLE_HEADER_HEIGHT
 
                 section.rows.forEach { row ->
-                    drawDailyRow(canvas, row, y, pageWidth)
+                    drawDailyRow(canvas, row, y, columns)
                     y += row.wrapped.height
                 }
                 y += 8f
             }
 
-            LectureTimetablePdfStyle.drawFooter(canvas, pageIndex + 1, pages.size, pageWidth, pageHeight, generatedAt, use24HourTime)
+            LectureTimetablePdfStyle.drawFooter(canvas, pageIndex + 1, pages.size, pageWidth, pageHeight, generatedAt)
             document.finishPage(page)
         }
     }
@@ -561,7 +569,7 @@ object LectureTimetablePdfGenerator {
         slots: List<TimetableSlot>,
         courseById: Map<Int, Course>,
         bodyTop: Float,
-        pageWidth: Int
+        columns: List<Float>
     ): List<List<DailyDaySection>> {
         val pages = mutableListOf<MutableList<DailyDaySection>>()
         var page = mutableListOf<DailyDaySection>()
@@ -578,7 +586,7 @@ object LectureTimetablePdfGenerator {
                 .map(::timedLecture)
                 .sortedWith(compareBy<TimedLecture> { it.startMinute }.thenBy { it.endMinute })
                 .map { it.slot }
-                .map { slot -> createDailySlotRow(slot, slot.courseId?.let(courseById::get), pageWidth) }
+                .map { slot -> createDailySlotRow(slot, slot.courseId?.let(courseById::get), columns) }
             if (dayRows.isEmpty()) continue
             var offset = 0
             var isContinuation = false
@@ -632,10 +640,9 @@ object LectureTimetablePdfGenerator {
         )
     }
 
-    private fun drawDailyTableHeader(canvas: Canvas, top: Float, pageWidth: Int) {
+    private fun drawDailyTableHeader(canvas: Canvas, top: Float, columns: List<Float>) {
         val left = LectureTimetablePdfStyle.MARGIN
-        val right = pageWidth - LectureTimetablePdfStyle.MARGIN
-        val columns = dailyColumnEdges(left, right)
+        val right = columns.last()
         val headerPaint = Paint().apply { color = LectureTimetablePdfStyle.lightGrey }
         val borderPaint = Paint().apply { color = LectureTimetablePdfStyle.borderLight; strokeWidth = 0.7f }
         canvas.drawRect(left, top, right, top + TABLE_HEADER_HEIGHT, headerPaint)
@@ -658,11 +665,10 @@ object LectureTimetablePdfGenerator {
         canvas: Canvas,
         row: DailySlotRow,
         top: Float,
-        pageWidth: Int
+        columns: List<Float>
     ) {
         val left = LectureTimetablePdfStyle.MARGIN
-        val right = pageWidth - LectureTimetablePdfStyle.MARGIN
-        val columns = dailyColumnEdges(left, right)
+        val right = columns.last()
         val borderPaint = Paint().apply { color = LectureTimetablePdfStyle.borderLight; strokeWidth = 0.65f }
         canvas.drawRect(left, top, right, top + row.wrapped.height, Paint().apply { color = android.graphics.Color.WHITE })
         canvas.drawRect(left, top, right, top + row.wrapped.height, borderPaint.apply { style = Paint.Style.STROKE })
@@ -683,10 +689,9 @@ object LectureTimetablePdfGenerator {
         }
     }
 
-    private fun createDailySlotRow(slot: TimetableSlot, course: Course?, pageWidth: Int): DailySlotRow {
-        val columns = dailyColumnEdges(LectureTimetablePdfStyle.MARGIN, pageWidth - LectureTimetablePdfStyle.MARGIN)
+    private fun createDailySlotRow(slot: TimetableSlot, course: Course?, columns: List<Float>): DailySlotRow {
         val values = listOf(
-            "${slot.startTime}-${slot.endTime}",
+            formatTimeRange(slot.startTime, slot.endTime),
             slot.courseCode,
             course?.title?.ifBlank { "-" } ?: "-",
             formatCourseUnits(course?.units),
@@ -702,10 +707,6 @@ object LectureTimetablePdfGenerator {
             course,
             wrapPdfTableRow(values, widths, 8f, 10f, 10f, measure)
         )
-    }
-
-    private fun dailyColumnEdges(left: Float, right: Float): List<Float> {
-        return dailyTimetableColumnEdges(left, right)
     }
 
     private fun buildLegendCourses(
@@ -724,7 +725,7 @@ object LectureTimetablePdfGenerator {
             val times = group.slots.minOf { timedLecture(it).startMinute }
             val hour = times / 60
             val minute = times % 60
-            val time = String.format(Locale.US, "%02d:%02d", hour, minute)
+            val time = formatTime(hour, minute)
             val codes = group.slots.joinToString("/") { it.courseCode }
             "${dayName(group.dayOfWeek).take(3).uppercase(Locale.getDefault())} $time $codes"
         }

@@ -34,8 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.EssayDraft
 import com.deehem.gpawhiz.data.Scholarship
+import com.deehem.gpawhiz.service.formatDateTime
 import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
-import java.text.SimpleDateFormat
 import java.util.*
 
 @Composable
@@ -227,7 +227,7 @@ fun DraftCardItem(
     }
     val chars = draft.body.length
     val dateStr = remember(draft.lastModified) {
-        SimpleDateFormat("MMM dd, yyyy • hh:mm a", Locale.getDefault()).format(Date(draft.lastModified))
+        formatDateTime(Date(draft.lastModified), "MMM dd, yyyy", " • ", Locale.getDefault())
     }
 
     Card(

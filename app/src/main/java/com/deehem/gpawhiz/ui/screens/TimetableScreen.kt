@@ -33,6 +33,8 @@ import com.deehem.gpawhiz.data.StudyStatus
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.service.formatExamDuration
 import com.deehem.gpawhiz.service.formatExamTimeRange
+import com.deehem.gpawhiz.service.formatStoredTime
+import com.deehem.gpawhiz.service.formatTimeRange
 import com.deehem.gpawhiz.service.isExamEndTimeValid
 import com.deehem.gpawhiz.service.isExamInProgress
 import com.deehem.gpawhiz.service.SystemSchedulerWrapper
@@ -770,7 +772,7 @@ fun AddExamDialog(
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                Text(selectedTime, modifier = Modifier.padding(top = 12.dp))
+                                Text(formatStoredTime(selectedTime), modifier = Modifier.padding(top = 12.dp))
                             }
                         }
                         OptionalExamEndTimeField(
@@ -859,7 +861,7 @@ private fun OptionalExamEndTimeField(
                     .testTag("exam_end_time_picker"),
                 contentAlignment = Alignment.CenterStart
             ) {
-                Text(time ?: "Not set", style = MaterialTheme.typography.bodyMedium)
+                Text(time?.let(::formatStoredTime) ?: "Not set", style = MaterialTheme.typography.bodyMedium)
             }
             if (time != null) {
                 IconButton(
@@ -1029,7 +1031,7 @@ fun TimetableRowItem(
                         Icon(Icons.Default.PlayArrow, contentDescription = "Time", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = "${slot.startTime} - ${slot.endTime}",
+                            text = formatTimeRange(slot.startTime, slot.endTime),
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface
@@ -1071,7 +1073,7 @@ fun TimeSelectionBox(label: String, time: String, onTimeSelected: (String) -> Un
         Text(text = label, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(modifier = Modifier.height(4.dp))
         Box(modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { timePickerDialog.show() }.padding(horizontal = 12.dp, vertical = 10.dp), contentAlignment = Alignment.CenterStart) {
-            Text(text = time, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(text = formatStoredTime(time), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1102,7 +1104,7 @@ fun StudySessionCard(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(text = "$dateStr • ${session.startTime}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = "$dateStr • ${formatStoredTime(session.startTime)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1276,7 +1278,7 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
                 OutlinedCard(onClick = {
                     val parts = selectedTime.split(":")
                     TimePickerDialog(context, { _, h, m -> selectedTime = String.format("%02d:%02d", h, m) }, parts[0].toInt(), parts[1].toInt(), false).show()
-                }, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Start Time: $selectedTime") } }
+                }, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Start Time: ${formatStoredTime(selectedTime)}") } }
                 OutlinedTextField(value = durationMinutes, onValueChange = { durationMinutes = it.filter { c -> c.isDigit() } }, label = { Text("Duration (mins)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                 if (isPastTime) {
                     Surface(

@@ -11,6 +11,7 @@ import com.deehem.gpawhiz.service.formatPdfShortDate
 import com.deehem.gpawhiz.service.lectureSummaryText
 import com.deehem.gpawhiz.service.textRectsDoNotOverlap
 import com.deehem.gpawhiz.service.textRectsStayInside
+import com.deehem.gpawhiz.service.timeColumnMinimumWidth
 import com.deehem.gpawhiz.service.timetableCourseColors
 import com.deehem.gpawhiz.service.wrapPdfTableRow
 import com.deehem.gpawhiz.service.wrapPdfText
@@ -102,6 +103,21 @@ class PdfTextLayoutTest {
         val dailyCases = cases.map { values ->
             listOf(values[0], values[1], values[2], values[3], values[4])
         }
+
+        @Test
+        fun timetableTimeColumnFitsWidestFormattedRangeAndKeepsPageWidthAligned() {
+            val left = 40f
+            val right = 555f
+            val ranges = listOf("8:00 - 9:00\u00A0AM", "11:00\u00A0AM - 12:00\u00A0PM")
+            val minimumTimeWidth = timeColumnMinimumWidth(ranges, 8f, 8f, measure)
+            val dailyEdges = dailyTimetableColumnEdges(left, right, minimumTimeWidth)
+            val examEdges = examTimetableColumnEdges(left, right, minimumTimeWidth)
+
+            assertTrue(dailyEdges[1] - dailyEdges[0] + 0.001f >= minimumTimeWidth)
+            assertTrue(examEdges[1] - examEdges[0] + 0.001f >= minimumTimeWidth)
+            assertEquals(right - left, dailyEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
+            assertEquals(right - left, examEdges.zipWithNext().sumOf { (a, b) -> (b - a).toDouble() }.toFloat(), 0.001f)
+        }
         val examEdges = examTimetableColumnEdges(left, right)
         val dailyEdges = dailyTimetableColumnEdges(left, right)
 
@@ -178,8 +194,7 @@ class PdfTextLayoutTest {
         assertEquals("1 lecture across 1 day", lectureSummaryText(1, 1))
         assertEquals("5 lectures across 4 days", lectureSummaryText(5, 4))
         assertEquals("1 exam, 15 Oct 2026 to 15 Oct 2026", examSummaryText(1, "15 Oct 2026", "15 Oct 2026"))
-        assertEquals("15 Oct 2026, 2:03 AM", formatPdfFooterDate(date, false, Locale.US))
-        assertEquals("15 Oct 2026, 02:03", formatPdfFooterDate(date, true, Locale.US))
+        assertEquals("15 Oct 2026, 2:03\u00A0AM", formatPdfFooterDate(date, Locale.US))
         assertEquals("15 Oct 2026", formatPdfShortDate(date, Locale.US))
     }
 

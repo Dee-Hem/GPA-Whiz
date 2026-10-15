@@ -17,7 +17,6 @@ import java.util.zip.ZipOutputStream
 object ScholarshipXlsxGenerator {
 
     private val sdfDate = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    private val sdfDateTime = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.getDefault())
 
     /**
      * Generate 4-Sheet Comprehensive Scholarship Workbook (.xlsx)
@@ -259,7 +258,7 @@ object ScholarshipXlsxGenerator {
 """)
 
         // Row 2: Subtitle
-        val genDateStr = "Exported: ${sdfDateTime.format(Date())}  |  Completely Offline Academic Record"
+        val genDateStr = "Exported: ${formatDateTime(Date(), "dd MMMM yyyy", ", ", Locale.getDefault())}  |  Completely Offline Academic Record"
         sb.append("""    <row r="2">
       <c r="A2" s="3" t="inlineStr"><is><t>$genDateStr</t></is></c>
     </row>
@@ -609,7 +608,7 @@ object ScholarshipXlsxGenerator {
       <c r="A1" s="2" t="inlineStr"><is><t>SCHOLARSHIP SUMMARY &amp; ANALYTICS</t></is></c>
     </row>
     <row r="2">
-      <c r="A2" s="3" t="inlineStr"><is><t>Generated: ${sdfDateTime.format(Date())} via GPA Whiz</t></is></c>
+      <c r="A2" s="3" t="inlineStr"><is><t>Generated: ${formatDateTime(Date(), "dd MMMM yyyy", ", ", Locale.getDefault())} via GPA Whiz</t></is></c>
     </row>
     <row r="3"/>
     <row r="4">

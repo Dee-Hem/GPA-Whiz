@@ -12,6 +12,7 @@ import com.deehem.gpawhiz.data.Semester
 import com.deehem.gpawhiz.data.StudentProfile
 import java.io.OutputStream
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -269,8 +270,12 @@ object OfficialTranscriptPdfGenerator {
 
         // Footer
         val footerPaint = Paint().apply { color = colorTextGrey; textSize = 9f; typeface = typefaceBold; textAlign = Paint.Align.CENTER; isAntiAlias = true; letterSpacing = 0.05f }
-        val sdf = SimpleDateFormat("M/d/yyyy 'AT' h:mm:ss a", Locale.US)
-        val footerText = "DOCUMENT CERTIFIED VIA GPA WHIZ ENGINE • ISSUED ${sdf.format(Date())}"
+        val issuedAt = Date()
+        val issuedDate = SimpleDateFormat("M/d/yyyy 'AT'", Locale.US).format(issuedAt)
+        val issuedTime = Calendar.getInstance().apply { time = issuedAt }.let {
+            formatTime(it.get(Calendar.HOUR_OF_DAY), it.get(Calendar.MINUTE))
+        }
+        val footerText = "DOCUMENT CERTIFIED VIA GPA WHIZ ENGINE • ISSUED $issuedDate $issuedTime"
         tracker.canvas.drawRect(0f, pageHeight - 50f, pageWidth.toFloat(), pageHeight.toFloat(), Paint().apply { color = colorLightGrey; alpha = 100 })
         tracker.canvas.drawText(footerText, pageWidth / 2f, pageHeight - 25f, footerPaint)
 

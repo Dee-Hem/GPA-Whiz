@@ -33,8 +33,7 @@ object ExamTimetablePdfGenerator {
         courses: List<Course>,
         upcomingOnly: Boolean,
         outputStream: OutputStream,
-        nowMillis: Long = System.currentTimeMillis(),
-        use24HourTime: Boolean = false
+        nowMillis: Long = System.currentTimeMillis()
     ) {
         val sortedExams = filterAndSortExams(exams, upcomingOnly, nowMillis)
         val dateGroups = groupExamsByDate(sortedExams)
@@ -47,8 +46,19 @@ object ExamTimetablePdfGenerator {
         }
         val courseById = courses.associateBy { it.id }
         val clashExamIds = clashes.flatMap { it.exams }.map { it.id }.toSet()
+        val timePaint = LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText)
+        val minimumTimeColumnWidth = timeColumnMinimumWidth(
+            sortedExams.map { formatExamTimeRange(it.time, it.endTime) },
+            horizontalPadding = 8f,
+            textSize = 8f
+        ) { text, size -> LectureTimetablePdfStyle.measureText(timePaint, text, size) }
+        val columns = examTimetableColumnEdges(
+            LectureTimetablePdfStyle.MARGIN,
+            LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN,
+            minimumTimeColumnWidth
+        )
         val rowById = sortedExams.associate { exam ->
-            exam.id to createExamPdfRow(exam, courseById[exam.courseId], exam.id in clashExamIds)
+            exam.id to createExamPdfRow(exam, courseById[exam.courseId], exam.id in clashExamIds, columns)
         }
         val summary = examSummaryText(
             sortedExams.size,
@@ -98,7 +108,7 @@ object ExamTimetablePdfGenerator {
                 for (section in pageModel.sections) {
                     drawDateHeader(canvas, section.dateMillis, section.isContinuation, y)
                     y += DATE_HEADER_HEIGHT
-                    drawTableHeader(canvas, y)
+                    drawTableHeader(canvas, y, columns)
                     y += TABLE_HEADER_HEIGHT
 
                     for (exam in section.exams) {
@@ -108,7 +118,8 @@ object ExamTimetablePdfGenerator {
                             row = row,
                             top = y,
                             isPast = isExamPast(exam, nowMillis),
-                            hasClash = exam.id in clashExamIds
+                            hasClash = exam.id in clashExamIds,
+                            columns = columns
                         )
                         y += row.wrapped.height
                     }
@@ -132,8 +143,7 @@ object ExamTimetablePdfGenerator {
                     pages.size,
                     LectureTimetablePdfStyle.PAGE_WIDTH,
                     LectureTimetablePdfStyle.PAGE_HEIGHT,
-                    generatedAt,
-                    use24HourTime
+                    generatedAt
                 )
                 pdfDocument.finishPage(page)
             }
@@ -167,7 +177,12 @@ object ExamTimetablePdfGenerator {
         )
     }
 
-    private fun createExamPdfRow(exam: Exam, linkedCourse: Course?, hasClash: Boolean): ExamPdfRow {
+    private fun createExamPdfRow(
+        exam: Exam,
+        linkedCourse: Course?,
+        hasClash: Boolean,
+        edges: List<Float>
+    ): ExamPdfRow {
         val courseCode = exam.courseCode.ifBlank { linkedCourse?.code.orEmpty() }.ifBlank { "-" }
         val values = listOf(
             formatExamTimeRange(exam.time, exam.endTime),
@@ -177,7 +192,6 @@ object ExamTimetablePdfGenerator {
             exam.venue.ifBlank { "-" },
             exam.seatNumber.ifBlank { "-" }
         )
-        val edges = columnEdges()
         val widths = edges.zipWithNext { left, right -> right - left - 8f }.toMutableList().apply {
             if (hasClash) this[1] -= 12f
         }
@@ -196,8 +210,7 @@ object ExamTimetablePdfGenerator {
         )
     }
 
-    private fun drawTableHeader(canvas: Canvas, top: Float) {
-        val edges = columnEdges()
+    private fun drawTableHeader(canvas: Canvas, top: Float, edges: List<Float>) {
         val right = LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN
         val fillPaint = Paint().apply { color = LectureTimetablePdfStyle.lightGrey }
         val borderPaint = Paint().apply {
@@ -224,9 +237,9 @@ object ExamTimetablePdfGenerator {
         row: ExamPdfRow,
         top: Float,
         isPast: Boolean,
-        hasClash: Boolean
+        hasClash: Boolean,
+        edges: List<Float>
     ) {
-        val edges = columnEdges()
         val right = LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN
         val textColor = if (isPast) Color.parseColor("#94A3B8") else LectureTimetablePdfStyle.darkText
         val borderColor = if (isPast) Color.parseColor("#D7DCE2") else LectureTimetablePdfStyle.borderLight
@@ -278,13 +291,6 @@ object ExamTimetablePdfGenerator {
             "${it.courseCode} (${formatExamTimeRange(it.time, it.endTime)})"
         }
         return "$date: $items"
-    }
-
-    private fun columnEdges(): List<Float> {
-        return examTimetableColumnEdges(
-            LectureTimetablePdfStyle.MARGIN,
-            LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN
-        )
     }
 
     private fun dateFormatter() = SimpleDateFormat("EEEE, d MMMM yyyy", Locale.getDefault())

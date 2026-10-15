@@ -9,13 +9,14 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.deehem.gpawhiz.MainActivity
+import com.deehem.gpawhiz.service.formatStoredTime
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val isStudy = intent.getBooleanExtra("isStudySession", false)
         val isExam = intent.getBooleanExtra("isExam", false)
         val courseCode = intent.getStringExtra("courseCode") ?: "Your Class"
-        val time = intent.getStringExtra("startTime") ?: "Soon"
+        val time = intent.getStringExtra("startTime")?.let(::formatStoredTime) ?: "Soon"
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = when {

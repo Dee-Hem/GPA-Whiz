@@ -46,7 +46,7 @@ fun weeklyBlockTextLayout(
     measure: (String, Float) -> Float
 ): WeeklyBlockTextLayout {
     require(maxWidth > 0f) { "Weekly block text width must be positive." }
-    val timeRange = "${slot.startTime}-${slot.endTime}"
+    val timeRange = formatTimeRange(slot.startTime, slot.endTime)
     val content = buildList {
         add(WeeklyBlockTextKind.COURSE_CODE to slot.courseCode.ifBlank { "-" })
         add(WeeklyBlockTextKind.TIME to timeRange)
@@ -58,11 +58,21 @@ fun weeklyBlockTextLayout(
         val detailSize = maxOf(6.5f, codeSize - 1f)
         val lineHeight = maxOf(codeSize, detailSize) * 1.2f
         val textLines = content.flatMap { (kind, text) ->
-            wrapPdfText(text, maxWidth, if (kind == WeeklyBlockTextKind.COURSE_CODE) codeSize else detailSize, measure)
-                .map { kind to it }
+            if (kind == WeeklyBlockTextKind.TIME) {
+                val timeLayout = generateSequence(detailSize) { previous ->
+                    (previous - 0.5f).takeIf { it >= 4f }
+                }.mapNotNull { textSize ->
+                    wrapLectureTimeRange(text, maxWidth, textSize, measure)
+                        ?.takeIf { lines -> lines.all { measure(it, textSize) <= maxWidth } }
+                        ?.let { lines -> lines.map { Triple(kind, it, textSize) } }
+                }.firstOrNull()
+                requireNotNull(timeLayout) { "Weekly lecture time range does not fit its allocated block." }
+            } else {
+                val textSize = if (kind == WeeklyBlockTextKind.COURSE_CODE) codeSize else detailSize
+                wrapPdfText(text, maxWidth, textSize, measure).map { Triple(kind, it, textSize) }
+            }
         }
-        val lines = textLines.mapIndexed { index, (kind, text) ->
-            val textSize = if (kind == WeeklyBlockTextKind.COURSE_CODE) codeSize else detailSize
+        val lines = textLines.mapIndexed { index, (kind, text, textSize) ->
             val lineTop = 1f + index * lineHeight
             WeeklyBlockTextLine(
                 text = text,
@@ -77,6 +87,35 @@ fun weeklyBlockTextLayout(
         smallestLayout = layout
     }
     return requireNotNull(smallestLayout)
+}
+
+private fun wrapLectureTimeRange(
+    text: String,
+    maxWidth: Float,
+    textSize: Float,
+    measure: (String, Float) -> Float
+): List<String>? {
+    if (measure(text, textSize) <= maxWidth) return listOf(text)
+    val separator = " - "
+    val separatorIndex = text.indexOf(separator)
+    if (separatorIndex < 0) return null
+    val start = text.substring(0, separatorIndex)
+    val end = text.substring(separatorIndex + separator.length)
+    val startWithDash = "$start -"
+    val dashWithEnd = "- $end"
+    if (measure(startWithDash, textSize) <= maxWidth && measure(end, textSize) <= maxWidth) {
+        return listOf(startWithDash, end)
+    }
+    if (measure(start, textSize) <= maxWidth && measure(dashWithEnd, textSize) <= maxWidth) {
+        return listOf(start, dashWithEnd)
+    }
+    if (measure(start, textSize) <= maxWidth &&
+        measure("-", textSize) <= maxWidth &&
+        measure(end, textSize) <= maxWidth
+    ) {
+        return listOf(start, "-", end)
+    }
+    return null
 }
 
 data class LectureClashGroup(

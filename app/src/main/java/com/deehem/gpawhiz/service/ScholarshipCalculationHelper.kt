@@ -8,7 +8,6 @@ import java.util.concurrent.TimeUnit
 object ScholarshipCalculationHelper {
 
     private val dateFormatter = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-    private val fullDateTimeFormatter = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
     private val shortDateFormatter = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
 
     fun formatDate(timestamp: Long?): String {
@@ -23,7 +22,7 @@ object ScholarshipCalculationHelper {
 
     fun formatDateTime(timestamp: Long?): String {
         if (timestamp == null || timestamp <= 0) return "Not set"
-        return fullDateTimeFormatter.format(Date(timestamp))
+        return formatDateTime(Date(timestamp), "dd MMM yyyy", ", ", Locale.getDefault())
     }
 
     /**

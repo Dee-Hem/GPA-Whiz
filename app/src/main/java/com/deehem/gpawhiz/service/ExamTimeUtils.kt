@@ -6,7 +6,7 @@ fun isExamEndTimeValid(startTime: String, endTime: String?): Boolean =
     endTime.isNullOrBlank() || parseTimeMinutes(endTime) > parseTimeMinutes(startTime)
 
 fun formatExamTimeRange(startTime: String, endTime: String?): String =
-    if (endTime.isNullOrBlank()) startTime else "$startTime - $endTime"
+    formatTimeRange(startTime, endTime)
 
 fun formatExamDuration(startTime: String, endTime: String?): String? {
     if (endTime.isNullOrBlank()) return null

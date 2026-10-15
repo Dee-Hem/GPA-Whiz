@@ -1,36 +1,66 @@
 package com.deehem.gpawhiz.service
 
 import java.math.BigDecimal
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 import kotlin.math.floor
 
 fun formatCourseUnits(units: Number?): String =
     units?.let { BigDecimal(it.toString()).stripTrailingZeros().toPlainString() } ?: "-"
 
-fun examTimetableColumnEdges(left: Float, right: Float): List<Float> {
+fun examTimetableColumnEdges(
+    left: Float,
+    right: Float,
+    minimumTimeColumnWidth: Float = 0f
+): List<Float> {
     require(right > left) { "Timetable table width must be positive." }
     val width = right - left
+    val timeWidth = maxOf(width * 0.10f, minimumTimeColumnWidth)
+    require(timeWidth < width) { "Time column width must leave space for other timetable columns." }
+    val remainingWidth = width - timeWidth
+    val restWeights = listOf(12f, 36f, 6f, 26f, 10f)
+    var edge = left + timeWidth
     return listOf(
         left,
-        left + width * 0.10f,
-        left + width * 0.22f,
-        left + width * 0.58f,
-        left + width * 0.64f,
-        left + width * 0.90f,
-        right
-    )
+        edge
+    ) + restWeights.mapIndexed { index, weight ->
+        edge += remainingWidth * weight / restWeights.sum()
+        if (index == restWeights.lastIndex) right else edge
+    }
 }
 
-fun dailyTimetableColumnEdges(left: Float, right: Float): List<Float> {
+fun dailyTimetableColumnEdges(
+    left: Float,
+    right: Float,
+    minimumTimeColumnWidth: Float = 0f
+): List<Float> {
     require(right > left) { "Timetable table width must be positive." }
     val width = right - left
+    val timeWidth = maxOf(width * 0.10f, minimumTimeColumnWidth)
+    require(timeWidth < width) { "Time column width must leave space for other timetable columns." }
+    val remainingWidth = width - timeWidth
+    val restWeights = listOf(13f, 43f, 6f, 28f)
+    var edge = left + timeWidth
     return listOf(
         left,
-        left + width * 0.10f,
-        left + width * 0.23f,
-        left + width * 0.66f,
-        left + width * 0.72f,
-        right
-    )
+        edge
+    ) + restWeights.mapIndexed { index, weight ->
+        edge += remainingWidth * weight / restWeights.sum()
+        if (index == restWeights.lastIndex) right else edge
+    }
+}
+
+fun timeColumnMinimumWidth(
+    timeRanges: List<String>,
+    horizontalPadding: Float,
+    textSize: Float,
+    measure: (String, Float) -> Float
+): Float {
+    require(horizontalPadding >= 0f) { "Time column padding cannot be negative." }
+    require(textSize > 0f) { "Time column text size must be positive." }
+    return (timeRanges.maxOfOrNull { measure(it, textSize) } ?: 0f) + horizontalPadding
 }
 
 data class PdfFittedText(
@@ -170,11 +200,21 @@ fun pdfSummaryText(itemName: String, count: Int, first: String? = null, last: St
 
 fun formatPdfFooterDate(
     date: java.util.Date,
-    use24HourTime: Boolean,
     locale: java.util.Locale = java.util.Locale.getDefault()
 ): String {
-    val pattern = if (use24HourTime) "d MMM yyyy, HH:mm" else "d MMM yyyy, h:mm a"
-    return java.text.SimpleDateFormat(pattern, locale).format(date)
+    return formatDateTime(date, "d MMM yyyy", ", ", locale)
+}
+
+fun formatDateTime(
+    date: Date,
+    datePattern: String,
+    separator: String,
+    locale: Locale = Locale.getDefault()
+): String {
+    val calendar = Calendar.getInstance().apply { time = date }
+    return SimpleDateFormat(datePattern, locale).format(date) +
+        separator +
+        formatTime(calendar.get(Calendar.HOUR_OF_DAY), calendar.get(Calendar.MINUTE))
 }
 
 fun formatPdfShortDate(date: java.util.Date, locale: java.util.Locale = java.util.Locale.getDefault()): String =

@@ -137,8 +137,8 @@ class ExampleUnitTest {
         assertFalse(isExamEndTimeValid("09:00", "09:00"))
         assertFalse(isExamEndTimeValid("09:00", "08:59"))
 
-        assertEquals("09:00", formatExamTimeRange("09:00", null))
-        assertEquals("09:00 - 11:00", formatExamTimeRange("09:00", "11:00"))
+        assertEquals("9:00\u00A0AM", formatExamTimeRange("09:00", null))
+        assertEquals("9:00 - 11:00\u00A0AM", formatExamTimeRange("09:00", "11:00"))
         assertEquals("2h", formatExamDuration("09:00", "11:00"))
         assertEquals("1h 30m", formatExamDuration("09:00", "10:30"))
         assertNull(formatExamDuration("09:00", null))

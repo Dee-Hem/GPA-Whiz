@@ -49,7 +49,21 @@ object ScholarshipPdfGenerator {
     private val COLOR_WHITE = Color.WHITE
 
     private val sdfDate = SimpleDateFormat("dd MMM yyyy", Locale.US)
-    private val sdfDateTime = SimpleDateFormat("dd MMMM yyyy, HH:mm", Locale.getDefault())
+    private data class OpenDeadlineRow(
+        val days: ScholarshipPdfDaysText,
+        val nameLines: List<String>,
+        val detailLines: List<String>,
+        val dateLine: String,
+        val height: Float
+    )
+    private data class PreparedKpi(
+        val title: String,
+        val valuePaint: Paint,
+        val valueLines: List<String>,
+        val subtitlePaint: Paint,
+        val subtitleLines: List<String>,
+        val height: Float
+    )
 
     /**
      * Generate Comprehensive All Scholarships Multi-Section Report in A4 Landscape
@@ -68,6 +82,83 @@ object ScholarshipPdfGenerator {
         val pageWidth = A4_LANDSCAPE_WIDTH
         val pageHeight = A4_LANDSCAPE_HEIGHT
         val contentWidth = pageWidth - (2 * MARGIN_X) // 770 pt
+        val colWidths = floatArrayOf(175f, 135f, 70f, 90f, 95f, 95f, 110f)
+        val maxPageBottom = pageHeight - MARGIN_BOTTOM - 20f
+        val openDeadlines = scholarshipPdfOpenDeadlines(scholarships)
+        val continuationDeadlinePaint = Paint().apply {
+            textSize = 7.2f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+        }
+        val continuationDeadlineDetailPaint = Paint().apply {
+            textSize = 7.2f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            isAntiAlias = true
+        }
+        val deadlineRows = openDeadlines.drop(4).map { scholarship ->
+            val days = scholarshipPdfDaysText(scholarship.status, scholarship.deadlineDate)
+            val nameLines = wrapText(scholarship.name, continuationDeadlinePaint, contentWidth - 24f)
+            val details = "${scholarship.organization.ifBlank { "Not Specified" }} • ${scholarship.status}"
+            val detailLines = wrapText(details, continuationDeadlineDetailPaint, contentWidth - 24f)
+            val dateLine = "${scholarship.deadlineDate?.let { sdfDate.format(Date(it)) } ?: "-"} • ${days.text}"
+            OpenDeadlineRow(
+                days,
+                nameLines,
+                detailLines,
+                dateLine,
+                maxOf(38f, 12f + nameLines.size * 8f + detailLines.size * 8f + 14f)
+            )
+        }
+        val deadlinePageRows = if (deadlineRows.isEmpty()) emptyList() else {
+            paginateScholarshipPdfRows(
+                deadlineRows.map { it.height + 4f },
+                MARGIN_TOP + 49f + 24f,
+                MARGIN_TOP + 49f + 24f,
+                maxPageBottom
+            )
+        }
+        val deadlinePages = deadlinePageRows.size
+        val measurePaints = colWidths.indices.map { index ->
+            Paint().apply {
+                textSize = 7.2f
+                typeface = if (index == 0 || index == 4 || index == 6) {
+                    Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                } else {
+                    Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+                }
+                isAntiAlias = true
+            }
+        }
+        val deadlineDisplays = scholarships.map {
+            scholarshipPdfDaysText(it.status, it.deadlineDate)
+        }
+        val reportRows = scholarships.mapIndexed { scholarshipIndex, scholarship ->
+            val requirements = allRequirements.filter { it.scholarshipId == scholarship.id }
+            val progress = ScholarshipCalculationHelper.getRequirementsProgress(requirements)
+            val deadline = scholarship.deadlineDate?.takeIf { it > 0L }
+            listOf(
+                scholarship.name,
+                scholarship.organization.ifBlank { "Not Specified" },
+                deadline?.let { sdfDate.format(Date(it)) } ?: "-",
+                deadlineDisplays[scholarshipIndex].text,
+                scholarship.status,
+                if (progress.total > 0) "${progress.completed}/${progress.total} (${progress.percentage.toInt()}%)" else "0 items",
+                scholarshipAwardText(scholarship, defaultCurrency, exchangeRates)
+            )
+        }
+        val reportRowHeights = reportRows.map { values ->
+            val lines = values.mapIndexed { index, value ->
+                wrapText(value, measurePaints[index], colWidths[index] - 10f).size
+            }.maxOrNull() ?: 1
+            maxOf(20f, 7f + lines * 9.5f)
+        }
+        val tablePages = paginateScholarshipPdfRows(
+            reportRowHeights,
+            MARGIN_TOP + 35f + 20f,
+            MARGIN_TOP + 18f + 20f,
+            maxPageBottom
+        ).size
+        val totalPages = tablePages + deadlinePages + 1
 
         var pageNumber = 1
 
@@ -132,96 +223,65 @@ object ScholarshipPdfGenerator {
 
         var yPos = MARGIN_TOP
 
-        // Top Accent Stripe
-        val paintStripe = Paint().apply { color = COLOR_NAVY_PRIMARY; style = Paint.Style.FILL }
-        canvas.drawRect(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + 3.5f, paintStripe)
-        yPos += 15f
-
-        // Document Header: Brand & Report Title
-        canvas.drawText("GPA WHIZ", MARGIN_X, yPos + 2f, paintMainTitle)
-        val brandW = paintMainTitle.measureText("GPA WHIZ")
-        val paintSubHeader = Paint(paintMainTitle).apply { color = COLOR_NAVY_ACCENT; textSize = 11.5f }
-        canvas.drawText("  •  $reportTitle", MARGIN_X + brandW, yPos + 1.5f, paintSubHeader)
-
-        val dateStr = "Report Generated: ${sdfDateTime.format(Date())} (Local Time)"
-        val dateWidth = paintSubtitle.measureText(dateStr)
-        canvas.drawText(dateStr, pageWidth - MARGIN_X - dateWidth, yPos, paintSubtitle)
-        yPos += 12f
-
-        canvas.drawLine(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos, paintGridLine)
-        yPos += 10f
-
-        // --- SECTION 1: STUDENT PROFILE BANNER ---
-        val profileHeight = 54f
-        val profileRect = RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + profileHeight)
-        canvas.drawRoundRect(profileRect, 4f, 4f, paintCardBg)
-        canvas.drawRoundRect(profileRect, 4f, 4f, paintCardBorder)
-
-        val pCol1 = MARGIN_X + 14f
-        val pCol2 = MARGIN_X + 220f
-        val pCol3 = MARGIN_X + 440f
-        val pCol4 = MARGIN_X + 630f
-
-        val studentName = student.fullName.ifBlank { "Registered Student" }.uppercase()
-        val institution = student.institution.ifBlank { "Not Specified" }
-        val faculty = student.faculty.ifBlank { "Not Specified" }
-        val department = student.department.ifBlank { "Not Specified" }
-        val currentLevel = student.currentLevel.ifBlank { "Undergraduate" }
-
-        val cgpaDisplay = if (calculatedCgpa > 0.0) {
-            "%.2f / %.1f Scale (Current)".format(calculatedCgpa, student.gradingScale)
-        } else if (student.targetCgpa > 0.0) {
-            "%.2f / %.1f Scale (Target)".format(student.targetCgpa, student.gradingScale)
-        } else {
-            "0.00 / %.1f Scale".format(student.gradingScale)
-        }
-
-        // Row 1 of Profile
-        canvas.drawText("STUDENT NAME", pCol1, yPos + 13f, paintLabel)
-        canvas.drawText(studentName, pCol1, yPos + 25f, paintValueBold)
-
-        canvas.drawText("INSTITUTION / UNIVERSITY", pCol2, yPos + 13f, paintLabel)
-        canvas.drawText(institution.take(32), pCol2, yPos + 25f, paintValueBold)
-
-        canvas.drawText("FACULTY & DEPARTMENT", pCol3, yPos + 13f, paintLabel)
-        val facDept = if (faculty != "Not Specified" && department != "Not Specified") "$faculty • $department" else if (faculty != "Not Specified") faculty else department
-        val facDeptLines = wrapText(facDept, paintValueBold, 180f)
-        canvas.drawText(facDeptLines[0], pCol3, yPos + 24f, paintValueBold)
-        if (facDeptLines.size > 1) {
-            var secondLine = facDeptLines[1]
-            if (facDeptLines.size > 2) secondLine = secondLine.take(25) + "..."
-            canvas.drawText(secondLine, pCol3, yPos + 34f, paintValueBold)
-        }
-
-        canvas.drawText("ACADEMIC LEVEL & CGPA", pCol4, yPos + 13f, paintLabel)
-        canvas.drawText("$cgpaDisplay ($currentLevel)", pCol4, yPos + 25f, paintValueBold)
-
-        // Row 2 Sub-details
-        canvas.drawText("Grading System: %.1f Maximum Point Scale".format(student.gradingScale), pCol1, yPos + 43f, paintSubtitle)
-        val fundingCount = scholarships.count { it.status == ScholarshipStatus.AWARDED }
-        canvas.drawText("Scholarship Pipeline: ${scholarships.size} Tracked ($fundingCount Awarded)", pCol3, yPos + 43f, paintSubtitle)
-
-        yPos += profileHeight + 12f
+        yPos = drawScholarshipHeader(canvas, pageWidth, reportTitle, paintMainTitle, paintSubtitle, paintGridLine)
+        yPos = drawStudentCard(
+            canvas,
+            student,
+            calculatedCgpa,
+            MARGIN_X,
+            yPos,
+            contentWidth,
+            paintLabel,
+            paintValueBold,
+            paintCardBg,
+            paintCardBorder
+        ) + 12f
 
         // --- SECTION 2: APPLICATION OVERVIEW (KPI CARDS) ---
         canvas.drawText("APPLICATION OVERVIEW & KEY METRICS", MARGIN_X, yPos, paintSectionHeading)
         yPos += 7f
 
         val stats = ScholarshipCalculationHelper.calculateScholarshipStats(scholarships, allRequirements, defaultCurrency, exchangeRates)
+        val statusCounts = scholarshipPdfStatusCounts(scholarships.map { it.status })
+        val countByStatus = statusCounts.toMap(        )
         val kpiCardWidth = (contentWidth - (5 * 10f)) / 6f
-        val kpiCardHeight = 44f
-
         val kpiItems = listOf(
             Triple("TOTAL", "${scholarships.size}", "Tracked"),
-            Triple("ACTIVE", "${stats.active}", "In Progress"),
-            Triple("SUBMITTED", "${stats.awaitingResults}", "Awaiting Review"),
-            Triple("AWARDED", "${stats.awarded}", if (stats.awarded > 0) "Won" else "0 Won"),
-            Triple("REJECTED", "${stats.rejected}", "Declined"),
+            Triple("OPEN", "${scholarshipPdfOpenCount(statusCounts)}", "Not Started + In Preparation + In Progress"),
+            Triple("APPLIED", "${scholarshipPdfAppliedCount(statusCounts)}", "Submitted + awaiting result"),
+            Triple("AWARDED", "${countByStatus["Awarded"] ?: 0}", "Awarded applications"),
+            Triple("REJECTED", "${countByStatus["Rejected"] ?: 0}", "Rejected applications"),
             Triple("AWARDED SUM", stats.formattedAwardedFunding, "Base: ${stats.baseCurrency}")
         )
 
-        for (i in kpiItems.indices) {
-            val (kpiTitle, kpiVal, kpiSub) = kpiItems[i]
+        val preparedKpis = kpiItems.map { (kpiTitle, kpiVal, kpiSub) ->
+            val valPaint = when (kpiTitle) {
+                "AWARDED" -> Paint(paintValueBold).apply { color = COLOR_SUCCESS_GREEN; textSize = 11f }
+                "REJECTED" -> Paint(paintValueBold).apply { color = COLOR_DANGER_RED; textSize = 11f }
+                "APPLIED" -> Paint(paintValueBold).apply { color = Color.parseColor("#1D4ED8"); textSize = 11f }
+                "OPEN" -> Paint(paintValueBold).apply { color = COLOR_TEXT_MUTED; textSize = 11f }
+                "AWARDED SUM" -> Paint(paintValueBold).apply { textSize = 8f }
+                else -> Paint(paintValueBold).apply { textSize = 11f }
+            }
+            val subPaint = Paint(paintSubtitle).apply { textSize = 5.8f }
+            val valueLines = wrapText(kpiVal, valPaint, kpiCardWidth - 16f)
+            val subtitleLines = wrapText(kpiSub, subPaint, kpiCardWidth - 16f)
+            val contentHeight = 42f + (valueLines.size - 1).coerceAtLeast(0) * 9f +
+                (subtitleLines.size - 1).coerceAtLeast(0) * 6f
+            PreparedKpi(
+                kpiTitle,
+                valPaint,
+                valueLines,
+                subPaint,
+                subtitleLines,
+                maxOf(44f, contentHeight)
+            )
+        }
+        val kpiCardHeight = preparedKpis.maxOfOrNull { it.height } ?: 44f
+
+        for (i in preparedKpis.indices) {
+            val kpi = preparedKpis[i]
+            val kpiTitle = kpi.title
             val cardX = MARGIN_X + i * (kpiCardWidth + 10f)
             val cardRect = RectF(cardX, yPos, cardX + kpiCardWidth, yPos + kpiCardHeight)
             canvas.drawRoundRect(cardRect, 4f, 4f, paintCardBg)
@@ -229,14 +289,13 @@ object ScholarshipPdfGenerator {
 
             canvas.drawText(kpiTitle, cardX + 8f, yPos + 12f, paintLabel)
 
-            val valPaint = when (kpiTitle) {
-                "AWARDED" -> Paint(paintValueBold).apply { color = COLOR_SUCCESS_GREEN; textSize = 11f }
-                "REJECTED" -> Paint(paintValueBold).apply { color = if (stats.rejected > 0) COLOR_DANGER_RED else COLOR_TEXT_DARK; textSize = 11f }
-                "ACTIVE" -> Paint(paintValueBold).apply { color = COLOR_NAVY_ACCENT; textSize = 11f }
-                else -> Paint(paintValueBold).apply { textSize = 11f }
+            kpi.valueLines.forEachIndexed { lineIndex, line ->
+                canvas.drawText(line, cardX + 8f, yPos + 25f + lineIndex * 9f, kpi.valuePaint)
             }
-            canvas.drawText(kpiVal.take(16), cardX + 8f, yPos + 26f, valPaint)
-            canvas.drawText(kpiSub, cardX + 8f, yPos + 38f, paintSubtitle)
+            val subtitleY = yPos + 37f + (kpi.valueLines.size - 1).coerceAtLeast(0) * 9f
+            kpi.subtitleLines.forEachIndexed { lineIndex, line ->
+                canvas.drawText(line, cardX + 8f, subtitleY + lineIndex * 6f, kpi.subtitlePaint)
+            }
         }
 
         yPos += kpiCardHeight + 6f
@@ -250,8 +309,11 @@ object ScholarshipPdfGenerator {
                 append(")")
             }
         }
-        canvas.drawText(currencyNote.take(135), MARGIN_X, yPos + 6f, paintSubtitle)
-        yPos += 12f
+        val currencyNoteLines = wrapText(currencyNote, paintSubtitle, contentWidth)
+        currencyNoteLines.forEachIndexed { index, line ->
+            canvas.drawText(line, MARGIN_X, yPos + 6f + index * 9f, paintSubtitle)
+        }
+        yPos += maxOf(12f, currencyNoteLines.size * 9f + 3f)
 
         // --- SECTION 3: STATUS VISUALIZATION & UPCOMING DEADLINES (SIDE-BY-SIDE) ---
         val columnWidth = (contentWidth - 14f) / 2f
@@ -264,7 +326,7 @@ object ScholarshipPdfGenerator {
         canvas.drawRoundRect(leftRect, 4f, 4f, paintCardBorder)
 
         canvas.drawText("APPLICATION STATUS DISTRIBUTION", leftBoxX + 12f, yPos + 16f, paintSectionHeading)
-        drawStatusDistributionChart(canvas, leftBoxX + 12f, yPos + 26f, columnWidth - 24f, bottomSectionHeight - 34f, scholarships)
+        drawStatusDistributionChart(canvas, leftBoxX + 12f, yPos + 26f, columnWidth - 24f, bottomSectionHeight - 34f, statusCounts, scholarships.size)
 
         // 3B. Right Box: Upcoming Deadlines & Urgency Alerts
         val rightBoxX = MARGIN_X + columnWidth + 14f
@@ -272,63 +334,106 @@ object ScholarshipPdfGenerator {
         canvas.drawRoundRect(rightRect, 4f, 4f, paintCardBg)
         canvas.drawRoundRect(rightRect, 4f, 4f, paintCardBorder)
 
-        canvas.drawText("UPCOMING DEADLINES & TIMELINE ALERTS", rightBoxX + 12f, yPos + 16f, paintSectionHeading)
+        canvas.drawText("OPEN DEADLINES", rightBoxX + 12f, yPos + 16f, paintSectionHeading)
 
-        val upcomingList = scholarships
-            .filter { it.status != ScholarshipStatus.AWARDED && it.status != ScholarshipStatus.REJECTED && (it.deadlineDate ?: 0L) > 0L }
-            .sortedBy { it.deadlineDate ?: Long.MAX_VALUE }
-            .take(4)
+        val upcomingList = openDeadlines.take(4)
 
         var deadY = yPos + 32f
         if (upcomingList.isEmpty()) {
-            canvas.drawText("No active deadlines recorded.", rightBoxX + 12f, deadY + 14f, paintSubtitle)
-            canvas.drawText("Add deadlines to your applications to monitor milestones.", rightBoxX + 12f, deadY + 28f, paintSubtitle)
+            val emptyText = "No open deadlines. Every tracked application is submitted or closed."
+            wrapText(emptyText, paintSubtitle, columnWidth - 24f).forEachIndexed { index, line ->
+                canvas.drawText(line, rightBoxX + 12f, deadY + 14f + index * 11f, paintSubtitle)
+            }
         } else {
             for (item in upcomingList) {
                 val itemDeadline = item.deadlineDate ?: 0L
-                val countdown = ScholarshipCalculationHelper.getDeadlineCountdown(itemDeadline)
+                val dayText = scholarshipPdfDaysText(item.status, itemDeadline)
                 val deadlineFormatted = sdfDate.format(Date(itemDeadline))
 
-                // Item container - Increased height to 38f to avoid truncation
-                val itemRect = RectF(rightBoxX + 8f, deadY, rightBoxX + columnWidth - 8f, deadY + 38f)
+                val namePaint = Paint(paintValueBold).apply { textSize = 7.2f }
+                val nameLines = wrapText(item.name, namePaint, columnWidth - 24f)
+                val detail = "${item.organization.ifBlank { "Not Specified" }} • ${item.status}"
+                val detailPaint = Paint(paintSubtitle).apply { textSize = 6.4f }
+                val detailLines = wrapText(detail, detailPaint, columnWidth - 24f)
+                val itemHeight = maxOf(38f, 10f + nameLines.size * 7f + detailLines.size * 7f + 8f)
+                val itemRect = RectF(rightBoxX + 8f, deadY, rightBoxX + columnWidth - 8f, deadY + itemHeight)
                 val paintItemBg = Paint().apply { color = COLOR_WHITE; style = Paint.Style.FILL }
                 canvas.drawRoundRect(itemRect, 3f, 3f, paintItemBg)
                 canvas.drawRoundRect(itemRect, 3f, 3f, paintGridLine)
 
-                // Urgency tag - Measure first to know available width for name
-                val tagText = formatCountdownBadge(countdown)
-                val tagPaint = when (countdown.urgency) {
-                    UrgencyLevel.CRITICAL, UrgencyLevel.PASSED -> Paint(paintValueBold).apply { color = COLOR_DANGER_RED; textSize = 7.8f }
-                    UrgencyLevel.HIGH -> Paint(paintValueBold).apply { color = COLOR_WARNING_ORANGE; textSize = 7.8f }
-                    else -> Paint(paintValueBold).apply { color = COLOR_NAVY_PRIMARY; textSize = 7.8f }
+                nameLines.forEachIndexed { index, line ->
+                    canvas.drawText(line, rightBoxX + 14f, deadY + 9f + index * 7f, namePaint)
                 }
-                val rightLabel = "$deadlineFormatted ($tagText)"
-                val labelW = tagPaint.measureText(rightLabel)
-
-                // Scholarship title - Use wrapText to avoid hard truncation
-                val nameMaxWidth = columnWidth - labelW - 32f
-                val nameLines = wrapText(item.name, paintValueBold, nameMaxWidth)
-                canvas.drawText(nameLines[0], rightBoxX + 14f, deadY + 13f, paintValueBold)
-
-                // Status & Provider - Use wrapText and allow two lines if needed
-                val subOrg = "Status: ${item.status} • Provider: ${item.organization.ifBlank { "Not Specified" }}"
-                val subLines = wrapText(subOrg, paintSubtitle, columnWidth - 24f)
-                canvas.drawText(subLines[0], rightBoxX + 14f, deadY + 24f, paintSubtitle)
-                if (subLines.size > 1) {
-                    val secondLine = if (subLines.size > 2) subLines[1].take(45) + "..." else subLines[1]
-                    canvas.drawText(secondLine, rightBoxX + 14f, deadY + 33f, paintSubtitle)
+                detailLines.forEachIndexed { index, line ->
+                    canvas.drawText(line, rightBoxX + 14f, deadY + 10f + nameLines.size * 7f + index * 7f, detailPaint)
                 }
+                val dateLine = "$deadlineFormatted • ${dayText.text}"
+                val datePaint = Paint(paintSubtitle).apply {
+                    textSize = 6.4f
+                    color = scholarshipPdfToneColor(dayText.tone)
+                }
+                canvas.drawText(dateLine, rightBoxX + 14f, deadY + itemHeight - 4f, datePaint)
 
-                // Draw urgency tag
-                canvas.drawText(rightLabel, rightBoxX + columnWidth - 14f - labelW, deadY + 13f, tagPaint)
-
-                deadY += 43f
+                deadY += itemHeight + 5f
             }
         }
 
-        drawFooter(canvas, pageNumber, pageWidth, pageHeight)
+        drawFooter(canvas, pageNumber, totalPages, pageWidth, pageHeight)
         pdfDocument.finishPage(page)
         pageNumber++
+
+        for (rowsOnPage in deadlinePageRows) {
+            page = pdfDocument.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+            canvas = page.canvas
+            yPos = drawScholarshipHeader(
+                canvas,
+                pageWidth,
+                "Upcoming scholarship application deadlines",
+                paintMainTitle,
+                paintSubtitle,
+                paintGridLine
+            )
+            drawSectionBar(canvas, MARGIN_X, yPos, contentWidth, "OPEN DEADLINES (CONTINUED)", paintSectionHeading)
+            yPos += 24f
+
+            for (rowIndex in rowsOnPage) {
+                val row = deadlineRows[rowIndex]
+                val cardBottom = yPos + row.height
+                canvas.drawRoundRect(
+                    RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, cardBottom),
+                    3f,
+                    3f,
+                    Paint().apply { color = COLOR_WHITE }
+                )
+                canvas.drawRoundRect(
+                    RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, cardBottom),
+                    3f,
+                    3f,
+                    paintGridLine
+                )
+                row.nameLines.forEachIndexed { lineIndex, line ->
+                    canvas.drawText(line, MARGIN_X + 10f, yPos + 12f + lineIndex * 8f, continuationDeadlinePaint)
+                }
+                row.detailLines.forEachIndexed { lineIndex, line ->
+                    canvas.drawText(
+                        line,
+                        MARGIN_X + 10f,
+                        yPos + 12f + row.nameLines.size * 8f + lineIndex * 8f,
+                        continuationDeadlineDetailPaint
+                    )
+                }
+                val datePaint = Paint(continuationDeadlineDetailPaint).apply {
+                    color = scholarshipPdfToneColor(row.days.tone)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                }
+                canvas.drawText(row.dateLine, MARGIN_X + 10f, cardBottom - 5f, datePaint)
+                yPos += row.height + 4f
+            }
+
+            drawFooter(canvas, pageNumber, totalPages, pageWidth, pageHeight)
+            pdfDocument.finishPage(page)
+            pageNumber++
+        }
 
         // =========================================================================
         // PAGE 2+: MAIN APPLICATION SUMMARY TABLE & IN-LINE APPLICATION DOSSIERS
@@ -346,7 +451,6 @@ object ScholarshipPdfGenerator {
         // 5. Requirements: 95 pt
         // 6. Award Value: 110 pt
         // Total = 175 + 135 + 70 + 90 + 95 + 95 + 110 = 770 pt
-        val colWidths = floatArrayOf(175f, 135f, 70f, 90f, 95f, 95f, 110f)
         val colStarts = FloatArray(colWidths.size)
         var cumulativeX = MARGIN_X
         for (i in colWidths.indices) {
@@ -354,9 +458,9 @@ object ScholarshipPdfGenerator {
             cumulativeX += colWidths[i]
         }
 
-        val paintTableHeaderBg = Paint().apply { color = COLOR_NAVY_HEADER; style = Paint.Style.FILL }
+        val paintTableHeaderBg = Paint().apply { color = Color.parseColor("#EFF6FF"); style = Paint.Style.FILL }
         val paintTableHeaderText = Paint().apply {
-            color = COLOR_WHITE
+            color = COLOR_NAVY_ACCENT
             textSize = 7.8f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
@@ -364,14 +468,14 @@ object ScholarshipPdfGenerator {
 
         val paintTableText = Paint().apply {
             color = COLOR_TEXT_DARK
-            textSize = 7.8f
+            textSize = 7.2f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             isAntiAlias = true
         }
 
         val paintTableTextBold = Paint().apply {
             color = COLOR_TEXT_DARK
-            textSize = 7.8f
+            textSize = 7.2f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isAntiAlias = true
         }
@@ -408,14 +512,12 @@ object ScholarshipPdfGenerator {
         }
 
         // Draw Section Title on Page 2
-        canvas.drawText("SCHOLARSHIP APPLICATIONS (SUMMARY OVERVIEW)", MARGIN_X, yPos + 8f, paintSectionHeading)
+        drawSectionBar(canvas, MARGIN_X, yPos, contentWidth, "SCHOLARSHIP APPLICATIONS (SUMMARY OVERVIEW)", paintSectionHeading)
         val tableSub = "Comprehensive register of tracked scholarship opportunities with current status and deadlines."
-        canvas.drawText(tableSub, MARGIN_X, yPos + 19f, paintSubtitle)
-        yPos += 26f
+        canvas.drawText(tableSub, MARGIN_X, yPos + 29f, paintSubtitle)
+        yPos += 35f
 
         yPos = drawTableHeaders(canvas, yPos)
-        val maxPageBottom = pageHeight - MARGIN_BOTTOM - 20f
-
         if (scholarships.isEmpty()) {
             val emptyH = 34f
             val emptyRect = RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + emptyH)
@@ -427,28 +529,25 @@ object ScholarshipPdfGenerator {
         } else {
             for (index in scholarships.indices) {
                 val scholarship = scholarships[index]
-                val reqs = allRequirements.filter { it.scholarshipId == scholarship.id }
-                val progress = ScholarshipCalculationHelper.getRequirementsProgress(reqs)
-                val deadlineTs = scholarship.deadlineDate ?: 0L
-                val countdown = ScholarshipCalculationHelper.getDeadlineCountdown(deadlineTs)
-
-                // Calculate wrapped lines for name and provider
-                val nameLines = wrapText(scholarship.name, paintTableTextBold, colWidths[0] - 12f)
-                val providerLines = wrapText(scholarship.organization.ifBlank { "Not Specified" }, paintTableText, colWidths[1] - 12f)
-
-                val lineCount = maxOf(nameLines.size, providerLines.size, 1)
-                val calculatedRowH = maxOf(20f, 8f + (lineCount * 11f))
+                val rowValues = reportRows[index]
+                val deadlineTs = scholarship.deadlineDate
+                val cellPaints = listOf(paintTableTextBold, paintTableText, paintTableText, paintTableText, paintTableTextBold, paintTableText, paintTableTextBold)
+                val wrappedCells = rowValues.mapIndexed { cellIndex, value ->
+                    wrapText(value, cellPaints[cellIndex], colWidths[cellIndex] - 10f)
+                }
+                val calculatedRowH = reportRowHeights[index]
+                val daysDisplay = deadlineDisplays[index]
 
                 // Page split check for table rows
                 if (yPos + calculatedRowH > maxPageBottom) {
-                    drawFooter(canvas, pageNumber, pageWidth, pageHeight)
+                    drawFooter(canvas, pageNumber, totalPages, pageWidth, pageHeight)
                     pdfDocument.finishPage(page)
                     pageNumber++
                     page = pdfDocument.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
                     canvas = page.canvas
                     yPos = MARGIN_TOP
 
-                    canvas.drawText("SCHOLARSHIP APPLICATIONS (Continued - Page $pageNumber)", MARGIN_X, yPos + 8f, paintSectionHeading)
+                    drawSectionBar(canvas, MARGIN_X, yPos, contentWidth, "SCHOLARSHIP APPLICATIONS (CONTINUED)", paintSectionHeading)
                     yPos += 18f
                     yPos = drawTableHeaders(canvas, yPos)
                 }
@@ -465,107 +564,30 @@ object ScholarshipPdfGenerator {
                 }
                 canvas.drawLine(pageWidth - MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + calculatedRowH, paintGridLine)
 
-                // Draw Col 0: Scholarship Name (Wrapped & Clipped)
-                canvas.save()
-                canvas.clipRect(colStarts[0] + 1f, yPos + 1f, colStarts[0] + colWidths[0] - 1f, yPos + calculatedRowH - 1f)
-                var textLineY = yPos + 12f
-                for (line in nameLines) {
-                    canvas.drawText(line, colStarts[0] + 5f, textLineY, paintTableTextBold)
-                    textLineY += 11f
-                }
-                canvas.restore()
-
-                // Draw Col 1: Provider / Org (Wrapped & Clipped)
-                canvas.save()
-                canvas.clipRect(colStarts[1] + 1f, yPos + 1f, colStarts[1] + colWidths[1] - 1f, yPos + calculatedRowH - 1f)
-                textLineY = yPos + 12f
-                for (line in providerLines) {
-                    canvas.drawText(line, colStarts[1] + 5f, textLineY, paintTableText)
-                    textLineY += 11f
-                }
-                canvas.restore()
-
-                // Draw Col 2: Deadline (Clipped)
-                canvas.save()
-                canvas.clipRect(colStarts[2] + 1f, yPos + 1f, colStarts[2] + colWidths[2] - 1f, yPos + calculatedRowH - 1f)
-                val deadlineStr = if (deadlineTs > 0L) sdfDate.format(Date(deadlineTs)) else "Not Set"
-                canvas.drawText(deadlineStr, colStarts[2] + 5f, yPos + 13f, paintTableText)
-                canvas.restore()
-
-                // Draw Col 3: Days Remaining (Clipped & Urgency Formatted)
-                canvas.save()
-                canvas.clipRect(colStarts[3] + 1f, yPos + 1f, colStarts[3] + colWidths[3] - 1f, yPos + calculatedRowH - 1f)
-                val daysPaint = when (countdown.urgency) {
-                    UrgencyLevel.CRITICAL, UrgencyLevel.PASSED -> Paint(paintTableTextBold).apply { color = COLOR_DANGER_RED }
-                    UrgencyLevel.HIGH -> Paint(paintTableTextBold).apply { color = COLOR_WARNING_ORANGE }
-                    else -> paintTableText
-                }
-                val daysText = formatCountdownBadge(countdown)
-                canvas.drawText(daysText, colStarts[3] + 5f, yPos + 13f, daysPaint)
-                canvas.restore()
-
-                // Draw Col 4: Status (Styled Pill Badge & Clipped)
+                val daysPaint = Paint(paintTableTextBold).apply { color = scholarshipPdfToneColor(daysDisplay.tone) }
                 val statusColX = colStarts[4]
                 val statusColW = colWidths[4]
-                val statusBgColor = when (scholarship.status) {
-                    ScholarshipStatus.AWARDED -> COLOR_SUCCESS_BG
-                    ScholarshipStatus.REJECTED -> COLOR_DANGER_BG
-                    ScholarshipStatus.SUBMITTED, ScholarshipStatus.AWAITING_RESULT -> COLOR_STATUS_BG
-                    ScholarshipStatus.PREPARING, ScholarshipStatus.IN_PROGRESS -> COLOR_WARNING_BG
-                    else -> COLOR_STATUS_BG
-                }
-                val statusTextColor = when (scholarship.status) {
-                    ScholarshipStatus.AWARDED -> COLOR_SUCCESS_GREEN
-                    ScholarshipStatus.REJECTED -> COLOR_DANGER_RED
-                    ScholarshipStatus.SUBMITTED, ScholarshipStatus.AWAITING_RESULT -> COLOR_NAVY_PRIMARY
-                    ScholarshipStatus.PREPARING, ScholarshipStatus.IN_PROGRESS -> COLOR_WARNING_ORANGE
-                    else -> COLOR_TEXT_DARK
-                }
+                val (statusTextColor, statusBgColor) = scholarshipPdfStatusColors(scholarship.status)
                 val pillPaint = Paint().apply { color = statusBgColor; style = Paint.Style.FILL }
-                val pillTextPaint = Paint(paintTableTextBold).apply { color = statusTextColor; textSize = 7.5f }
+                val pillTextPaint = Paint(paintTableTextBold).apply { color = statusTextColor; textSize = 7.2f }
 
                 val statusPillRect = RectF(statusColX + 4f, yPos + 3f, statusColX + statusColW - 4f, yPos + calculatedRowH - 3f)
                 canvas.drawRoundRect(statusPillRect, 3f, 3f, pillPaint)
 
-                canvas.save()
-                canvas.clipRect(statusColX + 2f, yPos + 1f, statusColX + statusColW - 2f, yPos + calculatedRowH - 1f)
-                canvas.drawText(scholarship.status, statusColX + 8f, yPos + 13f, pillTextPaint)
-                canvas.restore()
-
-                // Draw Col 5: Requirements (Clipped)
-                canvas.save()
-                canvas.clipRect(colStarts[5] + 1f, yPos + 1f, colStarts[5] + colWidths[5] - 1f, yPos + calculatedRowH - 1f)
-                val reqStr = if (progress.total > 0) "${progress.completed}/${progress.total} (${progress.percentage.toInt()}%)" else "0 items"
-                canvas.drawText(reqStr, colStarts[5] + 5f, yPos + 13f, paintTableText)
-                canvas.restore()
-
-                // Draw Col 6: Award (Clipped)
-                canvas.save()
-                canvas.clipRect(colStarts[6] + 1f, yPos + 1f, colStarts[6] + colWidths[6] - 1f, yPos + calculatedRowH - 1f)
-                val origAmt = scholarship.effectiveAmount
-                val origCurr = scholarship.effectiveCurrency
-                val awardStr = if (origAmt > 0) {
-                    val origFormatted = CurrencyConverter.format(origAmt, origCurr)
-                    if (origCurr != defaultCurrency) {
-                        val conv = CurrencyConverter.convert(origAmt, origCurr, defaultCurrency, exchangeRates)
-                        if (conv is CurrencyConverter.ConversionResult.Success) {
-                            "$origFormatted (≈ ${CurrencyConverter.format(conv.convertedAmount, defaultCurrency)})"
-                        } else {
-                            origFormatted
-                        }
-                    } else {
-                        origFormatted
+                for (columnIndex in wrappedCells.indices) {
+                    if (columnIndex == 4) continue
+                    val cellPaint = if (columnIndex == 3) daysPaint else cellPaints[columnIndex]
+                    wrappedCells[columnIndex].forEachIndexed { lineIndex, line ->
+                        canvas.drawText(line, colStarts[columnIndex] + 5f, yPos + 12f + lineIndex * 9.5f, cellPaint)
                     }
-                } else "Unstated"
-                canvas.drawText(awardStr, colStarts[6] + 5f, yPos + 13f, paintTableTextBold)
-                canvas.restore()
+                }
+                wrappedCells[4].forEachIndexed { lineIndex, line ->
+                    canvas.drawText(line, statusColX + 8f, yPos + 12f + lineIndex * 9.5f, pillTextPaint)
+                }
 
                 yPos += calculatedRowH
             }
 
-            // Outer border for table
-            canvas.drawRect(MARGIN_X, MARGIN_TOP + 26f, pageWidth - MARGIN_X, yPos, paintGridLine)
-            yPos += 18f
         }
 
         // =========================================================================
@@ -573,7 +595,7 @@ object ScholarshipPdfGenerator {
         // Removed per user request.
         // =========================================================================
 
-        drawFooter(canvas, pageNumber, pageWidth, pageHeight)
+        drawFooter(canvas, pageNumber, totalPages, pageWidth, pageHeight)
         pdfDocument.finishPage(page)
 
         try {
@@ -592,18 +614,10 @@ object ScholarshipPdfGenerator {
         y: Float,
         width: Float,
         height: Float,
-        scholarships: List<Scholarship>
+        categories: List<Pair<String, Int>>,
+        total: Int
     ) {
-        val total = scholarships.size
-        val categories = listOf(
-            Pair("Not Started", scholarships.count { it.status == ScholarshipStatus.NOT_STARTED }),
-            Pair("In Preparation", scholarships.count { it.status == ScholarshipStatus.PREPARING || it.status == ScholarshipStatus.IN_PROGRESS || it.status == ScholarshipStatus.READY_TO_SUBMIT }),
-            Pair("Submitted", scholarships.count { it.status == ScholarshipStatus.SUBMITTED || it.status == ScholarshipStatus.ASSESSMENT || it.status == ScholarshipStatus.INTERVIEW }),
-            Pair("Awaiting Decision", scholarships.count { it.status == ScholarshipStatus.AWAITING_RESULT }),
-            Pair("Awarded", scholarships.count { it.status == ScholarshipStatus.AWARDED }),
-            Pair("Rejected", scholarships.count { it.status == ScholarshipStatus.REJECTED })
-        )
-
+        val displayedCategories = categories
         val maxVal = maxOf(categories.maxOfOrNull { it.second } ?: 1, 1).toFloat()
 
         val paintLabel = Paint().apply {
@@ -631,24 +645,18 @@ object ScholarshipPdfGenerator {
         val barEndX = x + width - 35f
         val usableW = barEndX - barStartX
 
-        val barHeight = 11f
-        val spacing = 21f
+        val barHeight = minOf(8f, height / (displayedCategories.size.coerceAtLeast(1) * 1.8f))
+        val spacing = height / displayedCategories.size.coerceAtLeast(1)
 
-        for (i in categories.indices) {
-            val (label, count) = categories[i]
-            val barY = y + 4f + (i * spacing)
+        for ((i, category) in displayedCategories.withIndex()) {
+            val (label, count) = category
+            val barY = y + i * spacing + (spacing - barHeight) / 2f
 
             // Bar Color
-            paintBar.color = when (label) {
-                "Awarded" -> COLOR_SUCCESS_GREEN
-                "Rejected" -> COLOR_DANGER_RED
-                "Submitted", "Awaiting Decision" -> COLOR_NAVY_ACCENT
-                "In Preparation" -> COLOR_WARNING_ORANGE
-                else -> COLOR_NAVY_HEADER
-            }
+            paintBar.color = scholarshipPdfStatusColorsForCategory(label).first
 
             // Category Label
-            canvas.drawText(label, barStartX - 6f, barY + 8.5f, paintLabel)
+            canvas.drawText(label, barStartX - 6f, barY + barHeight, paintLabel)
 
             // Horizontal Bar
             val barW = if (maxVal > 0 && total > 0) (count.toFloat() / maxVal) * usableW else 0f
@@ -660,7 +668,7 @@ object ScholarshipPdfGenerator {
             // Count & Percentage Label
             val pct = if (total > 0) ((count * 100f) / total).toInt() else 0
             val countText = "$count ($pct%)"
-            canvas.drawText(countText, barStartX + barW + 5f, barY + 8.5f, paintCount)
+            canvas.drawText(countText, barStartX + barW + 5f, barY + barHeight, paintCount)
         }
     }
 
@@ -763,99 +771,105 @@ object ScholarshipPdfGenerator {
             style = Paint.Style.FILL
         }
 
-        val paintBanner = Paint().apply {
-            color = COLOR_NAVY_PRIMARY
-            style = Paint.Style.FILL
-        }
-
-        var yPos = MARGIN_TOP
-
-        // Top Accent Banner
-        canvas.drawRect(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + 3.5f, paintBanner)
-        yPos += 15f
-
-        // Header: Brand & Document Type
-        canvas.drawText("GPA WHIZ", MARGIN_X, yPos, paintTitle)
-        val brandWidth = paintTitle.measureText("GPA WHIZ")
-        canvas.drawText("  •  INDIVIDUAL SCHOLARSHIP DOSSIER", MARGIN_X + brandWidth, yPos, paintSection)
-
-        val genDateStr = sdfDateTime.format(Date())
-        val dateWidth = paintSubtitle.measureText(genDateStr)
-        canvas.drawText(genDateStr, pageWidth - MARGIN_X - dateWidth, yPos, paintSubtitle)
-        yPos += 10f
-
-        canvas.drawLine(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos, paintLine)
-        yPos += 10f
-
-        // Student Info Block
-        val studentBoxHeight = 32f
-        canvas.drawRoundRect(RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + studentBoxHeight), 3f, 3f, paintCardBg)
-        canvas.drawRoundRect(RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + studentBoxHeight), 3f, 3f, paintLine)
-
-        val cgpaDisplay = if (calculatedCgpa > 0.0) {
-            "%.2f / %.1f Scale".format(calculatedCgpa, student.gradingScale)
-        } else if (student.targetCgpa > 0.0) {
-            "%.2f / %.1f Scale (Target)".format(student.targetCgpa, student.gradingScale)
-        } else {
-            "0.00 / %.1f Scale".format(student.gradingScale)
-        }
-
-        canvas.drawText("APPLICANT: ${student.fullName.ifBlank { "STUDENT" }.uppercase()} (${student.currentLevel})", MARGIN_X + 8f, yPos + 13f, paintBold)
-        canvas.drawText("INSTITUTION: ${student.institution.ifBlank { "N/A" }}  |  DEPT: ${student.department.ifBlank { "N/A" }}  |  CGPA: $cgpaDisplay", MARGIN_X + 8f, yPos + 24f, paintTextSmall)
-        yPos += studentBoxHeight + 12f
+        var yPos = drawScholarshipHeader(
+            canvas,
+            pageWidth,
+            "Individual scholarship application dossier",
+            paintTitle,
+            paintSubtitle,
+            paintLine,
+            title = "SCHOLARSHIP DOSSIER"
+        )
+        yPos = drawStudentCard(
+            canvas,
+            student,
+            calculatedCgpa,
+            MARGIN_X,
+            yPos,
+            contentWidth,
+            paintTextSmall,
+            paintBold,
+            paintCardBg,
+            paintLine
+        ) + 12f
 
         // Main Scholarship Header Banner
-        val headerHeight = 44f
-        canvas.drawRoundRect(RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + headerHeight), 4f, 4f, paintBanner)
-
-        val paintTitleLight = Paint(paintTitle).apply { color = COLOR_WHITE; textSize = 13f }
-        val paintSubLight = Paint(paintSubtitle).apply { color = COLOR_STATUS_BG; textSize = 8.5f }
-
-        canvas.drawText(scholarship.name.uppercase(), MARGIN_X + 12f, yPos + 18f, paintTitleLight)
-        val orgLine = "Provider: ${scholarship.organization.ifBlank { "Not Specified" }}  •  Status: ${scholarship.status.uppercase()}"
-        canvas.drawText(orgLine, MARGIN_X + 12f, yPos + 34f, paintSubLight)
-
-        // Award badge on the right
-        val effAmt = scholarship.effectiveAmount
-        val effCurr = scholarship.effectiveCurrency
-        val awardText = if (effAmt > 0) CurrencyConverter.format(effAmt, effCurr) else "Unstated"
-        val awardPaint = Paint(paintTitleLight).apply { textSize = 11f }
-        val awardWidth = awardPaint.measureText("Award: $awardText")
-        canvas.drawText("Award: $awardText", pageWidth - MARGIN_X - 12f - awardWidth, yPos + 26f, awardPaint)
-
-        yPos += headerHeight + 12f
+        val bannerTextPaint = Paint(paintBold).apply { textSize = 9f }
+        val bannerDetailPaint = Paint(paintTextSmall).apply { textSize = 7.2f }
+        val statusText = scholarship.status
+        val (statusTextColor, statusBgColor) = scholarshipPdfStatusColors(scholarship.status)
+        val statusTextPaint = Paint(paintBold).apply { color = statusTextColor; textSize = 7f }
+        val statusWidth = statusTextPaint.measureText(statusText) + 12f
+        val scholarshipNameLines = wrapText(scholarship.name, bannerTextPaint, contentWidth - statusWidth - 36f)
+        val organizationLines = wrapText(
+            "Provider: ${scholarship.organization.ifBlank { "Not Specified" }}",
+            bannerDetailPaint,
+            contentWidth - 24f
+        )
+        val awardText = scholarshipAwardText(scholarship, defaultCurrency, exchangeRates)
+        val awardLines = wrapText("Award: $awardText", bannerDetailPaint, contentWidth - 24f)
+        val bannerHeight = 16f + scholarshipNameLines.size * 11f +
+            organizationLines.size * 9f + awardLines.size * 9f + 8f
+        val bannerRect = RectF(MARGIN_X, yPos, pageWidth - MARGIN_X, yPos + bannerHeight)
+        canvas.drawRoundRect(bannerRect, 4f, 4f, paintCardBg)
+        canvas.drawRoundRect(bannerRect, 4f, 4f, paintLine)
+        val statusPaint = Paint().apply { color = statusBgColor }
+        canvas.drawRoundRect(
+            RectF(pageWidth - MARGIN_X - statusWidth - 10f, yPos + 5f, pageWidth - MARGIN_X - 10f, yPos + 18f),
+            3f,
+            3f,
+            statusPaint
+        )
+        canvas.drawText(statusText, pageWidth - MARGIN_X - statusWidth - 4f, yPos + 14f, statusTextPaint)
+        scholarshipNameLines.forEachIndexed { index, line ->
+            canvas.drawText(line, MARGIN_X + 12f, yPos + 14f + index * 11f, bannerTextPaint)
+        }
+        organizationLines.forEachIndexed { index, line ->
+            canvas.drawText(line, MARGIN_X + 12f, yPos + 18f + scholarshipNameLines.size * 11f + index * 9f, bannerDetailPaint)
+        }
+        awardLines.forEachIndexed { index, line ->
+            canvas.drawText(
+                line,
+                MARGIN_X + 12f,
+                yPos + 18f + scholarshipNameLines.size * 11f + organizationLines.size * 9f + index * 9f,
+                bannerDetailPaint
+            )
+        }
+        yPos += bannerHeight + 12f
 
         // 2-Column Split: Left = Details & Eligibility, Right = Requirements & Timeline
         val halfW = (contentWidth - 12f) / 2f
 
         // Left Column (Key Parameters & Verification)
         val leftX = MARGIN_X
-        val leftBoxHeight = 310f
+        val leftBoxHeight = minOf(310f, (pageHeight - MARGIN_BOTTOM - 20f - yPos).coerceAtLeast(0f))
         canvas.drawRoundRect(RectF(leftX, yPos, leftX + halfW, yPos + leftBoxHeight), 4f, 4f, paintCardBg)
         canvas.drawRoundRect(RectF(leftX, yPos, leftX + halfW, yPos + leftBoxHeight), 4f, 4f, paintLine)
 
         var ly = yPos + 16f
-        canvas.drawText("APPLICATION PARAMETERS & ELIGIBILITY", leftX + 12f, ly, paintSection)
+        drawSectionBar(canvas, leftX + 8f, ly - 11f, halfW - 16f, "APPLICATION PARAMETERS & ELIGIBILITY", paintSection)
         ly += 16f
 
-        fun drawParam(label: String, value: String) {
-            canvas.drawText(label, leftX + 12f, ly, paintBold)
-            val valLines = wrapText(value, paintText, halfW - 130f)
+        fun drawParam(label: String, value: String, valueColor: Int = COLOR_TEXT_DARK) {
+            val labelPaint = Paint(paintBold).apply { textSize = 7.4f }
+            val valuePaint = Paint(paintText).apply { color = valueColor; textSize = 7.2f }
+            canvas.drawText(label, leftX + 12f, ly, labelPaint)
+            val valLines = wrapText(value, valuePaint, halfW - 130f)
             var vy = ly
             for (line in valLines) {
-                canvas.drawText(line, leftX + 120f, vy, paintText)
-                vy += 11f
+                canvas.drawText(line, leftX + 120f, vy, valuePaint)
+                vy += 9f
             }
-            ly = maxOf(ly + 15f, vy + 4f)
+            ly = maxOf(ly + 13f, vy + 4f)
         }
 
         val deadlineTs = scholarship.deadlineDate ?: 0L
-        val countdown = ScholarshipCalculationHelper.getDeadlineCountdown(deadlineTs)
-        val deadlineFull = if (deadlineTs > 0L) "${sdfDate.format(Date(deadlineTs))} (${formatCountdownBadge(countdown)})" else "Not Specified"
+        val dayDisplay = scholarshipPdfDaysText(scholarship.status, scholarship.deadlineDate)
+        val deadlineFull = if (deadlineTs > 0L) "${sdfDate.format(Date(deadlineTs))} • ${dayDisplay.text}" else "-"
         val appliedDateStr = if (scholarship.dateApplied != null && scholarship.dateApplied > 0) sdfDate.format(Date(scholarship.dateApplied)) else "Not yet applied"
         val feedbackDateStr = if (scholarship.expectedFeedbackDate != null && scholarship.expectedFeedbackDate > 0) sdfDate.format(Date(scholarship.expectedFeedbackDate)) else "Not set"
 
-        drawParam("Deadline Date:", deadlineFull)
+        drawParam("Deadline Date:", deadlineFull, scholarshipPdfToneColor(dayDisplay.tone))
         drawParam("Application Status:", scholarship.status)
         drawParam("Date Applied:", appliedDateStr)
         drawParam("Expected Feedback:", feedbackDateStr)
@@ -900,21 +914,42 @@ object ScholarshipPdfGenerator {
 
         var ry = yPos + 16f
         val reqProgress = ScholarshipCalculationHelper.getRequirementsProgress(requirements)
-        canvas.drawText("REQUIREMENTS CHECKLIST (${reqProgress.completed}/${reqProgress.total} - ${reqProgress.percentage.toInt()}%)", rightX + 12f, ry, paintSection)
+        drawSectionBar(
+            canvas,
+            rightX + 8f,
+            ry - 11f,
+            halfW - 16f,
+            "REQUIREMENTS CHECKLIST (${reqProgress.completed}/${reqProgress.total} - ${reqProgress.percentage.toInt()}%)",
+            paintSection
+        )
         ry += 14f
 
         if (requirements.isEmpty()) {
             canvas.drawText("No specific requirements documented.", rightX + 12f, ry, paintSubtitle)
             ry += 16f
         } else {
-            for (req in requirements.take(6)) {
+            for (req in requirements) {
                 val isDone = req.status == RequirementStatus.COMPLETED || req.status == RequirementStatus.SUBMITTED
-                val marker = if (isDone) "[✓]" else "[○]"
+                val marker = if (isDone) "[x]" else "[ ]"
                 val mPaint = if (isDone) Paint(paintBold).apply { color = COLOR_SUCCESS_GREEN } else paintSubtitle
-
-                canvas.drawText("$marker ${req.title.take(30)}", rightX + 12f, ry, mPaint)
-                canvas.drawText("${req.category} | ${req.status}", rightX + halfW - 120f, ry, paintTextSmall)
-                ry += 13f
+                val requirementText = "$marker ${req.title} — ${req.category} | ${req.status}"
+                wrapText(requirementText, mPaint, halfW - 24f).forEach { line ->
+                    canvas.drawText(line, rightX + 12f, ry, mPaint)
+                    ry += 9f
+                }
+                if (req.details.isNotBlank()) {
+                    wrapText("Details: ${req.details}", paintTextSmall, halfW - 24f).forEach { line ->
+                        canvas.drawText(line, rightX + 12f, ry, paintTextSmall)
+                        ry += 8f
+                    }
+                }
+                if (req.notes.isNotBlank()) {
+                    wrapText("Notes: ${req.notes}", paintTextSmall, halfW - 24f).forEach { line ->
+                        canvas.drawText(line, rightX + 12f, ry, paintTextSmall)
+                        ry += 8f
+                    }
+                }
+                ry += 3f
             }
         }
 
@@ -922,24 +957,30 @@ object ScholarshipPdfGenerator {
         canvas.drawLine(rightX + 12f, ry, rightX + halfW - 12f, ry, paintLine)
         ry += 14f
 
-        canvas.drawText("TIMELINE & AUDIT LOGS", rightX + 12f, ry, paintSection)
+        drawSectionBar(canvas, rightX + 8f, ry - 11f, halfW - 16f, "TIMELINE & AUDIT LOGS", paintSection)
         ry += 14f
 
         if (timelineEvents.isEmpty()) {
             canvas.drawText("No timeline events logged yet.", rightX + 12f, ry, paintSubtitle)
         } else {
-            for (ev in timelineEvents.take(4)) {
+            for (ev in timelineEvents) {
                 val dateStr = sdfDate.format(Date(ev.date))
-                canvas.drawText("• $dateStr: ${ev.title}", rightX + 12f, ry, paintBold)
-                if (ev.description.isNotBlank()) {
-                    canvas.drawText("  ${ev.description.take(45)}", rightX + 12f, ry + 10f, paintTextSmall)
-                    ry += 10f
+                val entryLines = wrapText("$dateStr: ${ev.title}", paintBold, halfW - 24f)
+                entryLines.forEach { line ->
+                    canvas.drawText(line, rightX + 12f, ry, paintBold)
+                    ry += 9f
                 }
-                ry += 13f
+                if (ev.description.isNotBlank()) {
+                    wrapText(ev.description, paintTextSmall, halfW - 24f).forEach { line ->
+                        canvas.drawText(line, rightX + 12f, ry, paintTextSmall)
+                        ry += 8f
+                    }
+                }
+                ry += 3f
             }
         }
 
-        drawFooter(canvas, pageNumber, pageWidth, pageHeight)
+        drawFooter(canvas, pageNumber, 1, pageWidth, pageHeight)
         pdfDocument.finishPage(page)
 
         try {
@@ -949,38 +990,168 @@ object ScholarshipPdfGenerator {
         }
     }
 
-    /**
-     * Helper to format human-friendly countdown badge
-     */
-    private fun formatCountdownBadge(countdown: DeadlineCountdownResult): String {
-        return when {
-            countdown.daysRemaining > 1 -> "${countdown.daysRemaining} days left"
-            countdown.daysRemaining == 1L -> "Tomorrow"
-            countdown.daysRemaining == 0L -> "Today"
-            countdown.daysRemaining == -1L -> "Passed (1d ago)"
-            countdown.daysRemaining < -1L -> "Passed (${-countdown.daysRemaining}d ago)"
-            else -> "No deadline"
+    private fun drawScholarshipHeader(
+        canvas: Canvas,
+        pageWidth: Int,
+        subtitle: String,
+        titlePaint: Paint,
+        subtitlePaint: Paint,
+        rulePaint: Paint,
+        title: String = "SCHOLARSHIP TRACKER REPORT"
+    ): Float {
+        val titleStyle = Paint(titlePaint).apply {
+            color = COLOR_NAVY_ACCENT
+            textSize = 15f
+            textAlign = Paint.Align.CENTER
+        }
+        val subtitleStyle = Paint(subtitlePaint).apply {
+            textSize = 8f
+            textAlign = Paint.Align.CENTER
+        }
+        val centerX = pageWidth / 2f
+        canvas.drawText(title, centerX, MARGIN_TOP + 15f, titleStyle)
+        val subtitleLines = wrapText(subtitle, subtitleStyle, pageWidth - 2 * MARGIN_X)
+        subtitleLines.forEachIndexed { index, line ->
+            canvas.drawText(line, centerX, MARGIN_TOP + 28f + index * 9f, subtitleStyle)
+        }
+        val ruleY = MARGIN_TOP + 28f + subtitleLines.size * 9f
+        val rule = Paint(rulePaint).apply {
+            color = COLOR_NAVY_ACCENT
+            strokeWidth = 1.2f
+        }
+        canvas.drawLine(MARGIN_X, ruleY, pageWidth - MARGIN_X, ruleY, rule)
+        return ruleY + 12f
+    }
+
+    private fun drawStudentCard(
+        canvas: Canvas,
+        student: StudentProfile,
+        calculatedCgpa: Double,
+        x: Float,
+        y: Float,
+        width: Float,
+        labelPaint: Paint,
+        valuePaint: Paint,
+        fillPaint: Paint,
+        linePaint: Paint
+    ): Float {
+        val cgpa = when {
+            calculatedCgpa > 0.0 -> "%.2f / %.1f scale".format(calculatedCgpa, student.gradingScale)
+            student.targetCgpa > 0.0 -> "%.2f / %.1f scale (target)".format(student.targetCgpa, student.gradingScale)
+            else -> "0.00 / %.1f scale".format(student.gradingScale)
+        }
+        val fields = listOf(
+            "STUDENT NAME" to student.fullName.ifBlank { "Registered Student" },
+            "UNIVERSITY" to student.institution.ifBlank { "Not Specified" },
+            "FACULTY" to student.faculty.ifBlank { "Not Specified" },
+            "DEPARTMENT" to student.department.ifBlank { "Not Specified" },
+            "MATRIC NUMBER" to student.matricNo.ifBlank { "Not Specified" },
+            "LEVEL" to student.currentLevel.ifBlank { "Undergraduate" },
+            "CGPA" to cgpa
+        )
+        val innerWidth = width - 28f
+        val columnWidth = (innerWidth - 24f) / 3f
+        val valueStyle = Paint(valuePaint).apply { textSize = 7.8f }
+        val labelStyle = Paint(labelPaint).apply { textSize = 6.7f }
+        val rows = fields.chunked(3)
+        val rowHeights = rows.map { row ->
+            val maxValueLines = row.maxOf { (_, value) -> wrapText(value, valueStyle, columnWidth).size }
+            maxOf(24f, 14f + maxValueLines * 9f)
+        }
+        val cardHeight = 12f + rowHeights.sum() + 8f
+        val cardRect = RectF(x, y, x + width, y + cardHeight)
+        canvas.drawRoundRect(cardRect, 4f, 4f, fillPaint)
+        canvas.drawRoundRect(cardRect, 4f, 4f, Paint(linePaint).apply { style = Paint.Style.STROKE })
+        var rowY = y + 5f
+        rows.forEachIndexed { rowIndex, row ->
+            row.forEachIndexed { columnIndex, (label, value) ->
+                val fieldX = x + 14f + columnIndex * (columnWidth + 12f)
+                canvas.drawText(label, fieldX, rowY + 8f, labelStyle)
+                wrapText(value, valueStyle, columnWidth).forEachIndexed { lineIndex, line ->
+                    canvas.drawText(line, fieldX, rowY + 18f + lineIndex * 9f, valueStyle)
+                }
+            }
+            rowY += rowHeights[rowIndex]
+        }
+        return y + cardHeight
+    }
+
+    private fun scholarshipAwardText(
+        scholarship: Scholarship,
+        defaultCurrency: String,
+        exchangeRates: List<ExchangeRate>
+    ): String {
+        val amount = scholarship.effectiveAmount
+        val currency = scholarship.effectiveCurrency
+        if (amount <= 0.0) return "Unstated"
+        val formatted = CurrencyConverter.format(amount, currency)
+        if (currency == defaultCurrency) return formatted
+        val converted = CurrencyConverter.convert(amount, currency, defaultCurrency, exchangeRates)
+        return if (converted is CurrencyConverter.ConversionResult.Success) {
+            "$formatted (≈ ${CurrencyConverter.format(converted.convertedAmount, defaultCurrency)})"
+        } else {
+            formatted
         }
     }
+
+    private fun scholarshipPdfStatusColors(status: String): Pair<Int, Int> =
+        scholarshipPdfStatusColorsForCategory(scholarshipPdfCategoryForStatus(status))
+
+    private fun scholarshipPdfStatusColorsForCategory(category: String): Pair<Int, Int> =
+        when (category) {
+            "In Preparation" -> Color.parseColor("#7E22CE") to Color.parseColor("#F3E8FF")
+            "In Progress" -> Color.parseColor("#4338CA") to Color.parseColor("#E0E7FF")
+            "Submitted" -> Color.parseColor("#1D4ED8") to Color.parseColor("#DBEAFE")
+            "Awaiting Result" -> Color.parseColor("#B45309") to Color.parseColor("#FEF3C7")
+            "Awarded" -> COLOR_SUCCESS_GREEN to COLOR_SUCCESS_BG
+            "Rejected" -> COLOR_DANGER_RED to COLOR_DANGER_BG
+            "Not Started", "Withdrawn", "Expired" -> COLOR_TEXT_MUTED to Color.parseColor("#E2E8F0")
+            else -> COLOR_TEXT_MUTED to COLOR_STATUS_BG
+        }
+
+    private fun scholarshipPdfToneColor(tone: ScholarshipPdfTone): Int =
+        when (tone) {
+            ScholarshipPdfTone.OVERDUE -> COLOR_DANGER_RED
+            ScholarshipPdfTone.DUE_TODAY -> COLOR_WARNING_ORANGE
+            ScholarshipPdfTone.MUTED -> COLOR_TEXT_MUTED
+            ScholarshipPdfTone.STANDARD -> COLOR_TEXT_DARK
+        }
 
     /**
      * Draw standard page footer
      */
-    private fun drawFooter(canvas: Canvas, pageNumber: Int, pageWidth: Int, pageHeight: Int) {
+    private fun drawFooter(canvas: Canvas, pageNumber: Int, totalPages: Int, pageWidth: Int, pageHeight: Int) {
         val paintFooter = Paint().apply {
             color = COLOR_TEXT_MUTED
-            textSize = 7.5f
+            textSize = 7.2f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
             isAntiAlias = true
         }
 
         val footerY = pageHeight - MARGIN_BOTTOM + 12f
-        val footerLeft = "GPA Whiz • Scholarship Tracker Report | Generated ${sdfDate.format(Date())}"
+        val footerLeft = "Generated by GPA Whiz on ${formatDateTime(Date(), "dd MMM yyyy", ", ", Locale.US)}"
         canvas.drawText(footerLeft, MARGIN_X, footerY, paintFooter)
 
-        val pageStr = "Page $pageNumber"
+        val pageStr = "Page $pageNumber of $totalPages"
         val pageW = paintFooter.measureText(pageStr)
         canvas.drawText(pageStr, pageWidth - MARGIN_X - pageW, footerY, paintFooter)
+    }
+
+    private fun drawSectionBar(
+        canvas: Canvas,
+        x: Float,
+        y: Float,
+        width: Float,
+        title: String,
+        textPaint: Paint
+    ) {
+        val barPaint = Paint().apply { color = Color.parseColor("#EFF6FF") }
+        canvas.drawRoundRect(RectF(x, y, x + width, y + 18f), 2f, 2f, barPaint)
+        val sectionPaint = Paint(textPaint).apply {
+            color = COLOR_NAVY_ACCENT
+            textSize = 8f
+        }
+        canvas.drawText(title, x + 6f, y + 12f, sectionPaint)
     }
 
     /**
@@ -988,27 +1159,8 @@ object ScholarshipPdfGenerator {
      */
     private fun wrapText(text: String, paint: Paint, maxWidth: Float): List<String> {
         if (text.isBlank()) return listOf("")
-        val words = text.split(" ")
-        val lines = mutableListOf<String>()
-        var currentLine = StringBuilder()
-
-        for (word in words) {
-            val candidate = if (currentLine.isEmpty()) word else "$currentLine $word"
-            if (paint.measureText(candidate) <= maxWidth) {
-                currentLine = StringBuilder(candidate)
-            } else {
-                if (currentLine.isNotEmpty()) {
-                    lines.add(currentLine.toString())
-                    currentLine = StringBuilder(word)
-                } else {
-                    lines.add(word)
-                    currentLine = StringBuilder()
-                }
-            }
+        return wrapPdfText(text, maxWidth, paint.textSize) { line, size ->
+            Paint(paint).apply { textSize = size }.measureText(line)
         }
-        if (currentLine.isNotEmpty()) {
-            lines.add(currentLine.toString())
-        }
-        return if (lines.isEmpty()) listOf(text) else lines
     }
 }

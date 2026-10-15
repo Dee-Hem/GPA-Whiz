@@ -8,6 +8,7 @@ import com.deehem.gpawhiz.service.lectureClashGroups
 import com.deehem.gpawhiz.service.lectureHourRange
 import com.deehem.gpawhiz.service.lectureVisibleDays
 import com.deehem.gpawhiz.service.hourAxisLabelPositions
+import com.deehem.gpawhiz.service.formatTimeRange
 import com.deehem.gpawhiz.service.textRectsDoNotOverlap
 import com.deehem.gpawhiz.service.textRectsStayInside
 import com.deehem.gpawhiz.service.timetableCourseColor
@@ -150,6 +151,17 @@ class LectureTimetableLayoutTest {
     }
 
     @Test
+    fun weeklyTimeRangeWrapsAtDashWithoutSplittingTimeText() {
+        val lecture = slot(1, day = 1, start = "11:00", end = "13:00")
+        val layout = weeklyBlockTextLayout(lecture, 40f, 80f) { text, size ->
+            text.length * size * 0.5f
+        }
+        val timeLines = layout.lines.filter { it.kind == WeeklyBlockTextKind.TIME }.map { it.text }
+
+        assertEquals(listOf("11:00\u00A0AM -", "1:00\u00A0PM"), timeLines)
+    }
+
+    @Test
     fun weeklyBlockWithoutVenueStillIncludesCodeAndTime() {
         val lecture = slot(1, day = 1, start = "08:00", end = "09:00").copy(venue = "")
         val layout = weeklyBlockTextLayout(lecture, 70f, 50f) { text, size ->
@@ -232,7 +244,7 @@ class LectureTimetableLayoutTest {
 
             val joinedText = layout.lines.joinToString("") { it.text }.filterNot(Char::isWhitespace)
             assertTrue(joinedText.contains(slot.courseCode.filterNot(Char::isWhitespace)))
-            assertTrue(joinedText.contains("${slot.startTime}-${slot.endTime}"))
+            assertTrue(joinedText.contains(formatTimeRange(slot.startTime, slot.endTime).filterNot(Char::isWhitespace)))
             if (slot.venue.isNotBlank()) {
                 assertTrue(joinedText.contains(slot.venue.filterNot(Char::isWhitespace)))
             }
