@@ -8,6 +8,7 @@ import com.deehem.gpawhiz.data.StudentProfile
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.service.BackupRestoreHelper
 import com.deehem.gpawhiz.service.GpaCalcService
+import com.deehem.gpawhiz.service.OfficialTranscriptPdfGenerator
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +21,14 @@ class ExampleUnitTest {
     @Test
     fun addition_isCorrect() {
         assertEquals(4, 2 + 2)
+    }
+
+    @Test
+    fun transcriptScoreFormattingPreservesEnteredValueAndUsesDashWhenEmpty() {
+        assertEquals("59", OfficialTranscriptPdfGenerator.formatScore("59"))
+        assertEquals("59.5", OfficialTranscriptPdfGenerator.formatScore("59.5"))
+        assertEquals("-", OfficialTranscriptPdfGenerator.formatScore(""))
+        assertEquals("-", OfficialTranscriptPdfGenerator.formatScore(null))
     }
 
     @Test

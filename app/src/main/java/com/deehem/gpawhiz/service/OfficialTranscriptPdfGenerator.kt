@@ -201,6 +201,17 @@ object OfficialTranscriptPdfGenerator {
         val courseInfoPaint = Paint().apply { color = Color.BLACK; textSize = 9f; isAntiAlias = true }
         val tableHeadPaint = Paint().apply { color = colorTextGrey; textSize = 8f; typeface = typefaceBold; isAntiAlias = true }
 
+        fun drawCourseTableHeader() {
+            tracker.canvas.drawText("COURSE CODE & TITLE", leftMargin + 15f, tracker.yPos, tableHeadPaint.apply { textAlign = Paint.Align.LEFT })
+            tracker.canvas.drawText("CREDITS", rightMargin - 170f, tracker.yPos, tableHeadPaint.apply { textAlign = Paint.Align.CENTER })
+            tracker.canvas.drawText("GRADE", rightMargin - 105f, tracker.yPos, tableHeadPaint)
+            tracker.canvas.drawText("SCORE", rightMargin - 40f, tracker.yPos, tableHeadPaint)
+
+            tracker.yPos += 8f
+            tracker.canvas.drawLine(leftMargin + 15f, tracker.yPos, rightMargin - 15f, tracker.yPos, Paint().apply { color = colorBorderLight; strokeWidth = 0.8f })
+            tracker.yPos += 25f
+        }
+
         for (semester in semesters) {
             val semCourses = allCourses.filter { it.semesterId == semester.id }
             val sgpa = GpaCalcService.calculateSgpa(semCourses, semester.gradingScale)
@@ -215,23 +226,23 @@ object OfficialTranscriptPdfGenerator {
             tracker.canvas.drawText("SEM GPA: ${String.format("%.2f", sgpa)}", rightMargin - 90f, tracker.yPos - 4f, semHeaderPaint)
 
             tracker.yPos += 24f
-            tracker.canvas.drawText("COURSE CODE & TITLE", leftMargin + 15f, tracker.yPos, tableHeadPaint)
-            tracker.canvas.drawText("CREDITS", rightMargin - 130f, tracker.yPos, tableHeadPaint.apply { textAlign = Paint.Align.CENTER })
-            tracker.canvas.drawText("GRADE", rightMargin - 50f, tracker.yPos, tableHeadPaint.apply { textAlign = Paint.Align.CENTER })
-            
-            tracker.yPos += 8f
-            tracker.canvas.drawLine(leftMargin + 15f, tracker.yPos, rightMargin - 15f, tracker.yPos, Paint().apply { color = colorBorderLight; strokeWidth = 0.8f })
-            tracker.yPos += 25f
+            drawCourseTableHeader()
 
             for (course in semCourses) {
-                val courseTitleMaxWidth = 330f
+                val courseTitleMaxWidth = 300f
+                val pageBeforeBreak = tracker.currentPageNumber
                 tracker.checkAndPageBreak(55f)
+                if (tracker.currentPageNumber != pageBeforeBreak) {
+                    tracker.yPos += 24f
+                    drawCourseTableHeader()
+                }
                 
                 // Course Code and Title (Stacked)
                 tracker.canvas.drawText(course.code, leftMargin + 15f, tracker.yPos, courseCodePaint)
                 val courseTitleY = drawWrappedText(tracker.canvas, course.title, leftMargin + 15f, tracker.yPos + 11f, courseTitlePaint, courseTitleMaxWidth)
                 
-                tracker.canvas.drawText("${course.units}", rightMargin - 130f, tracker.yPos + 4f, courseInfoPaint.apply { textAlign = Paint.Align.CENTER; typeface = typefaceRegular })
+                tracker.canvas.drawText("${course.units}", rightMargin - 170f, tracker.yPos + 4f, courseInfoPaint.apply { textAlign = Paint.Align.CENTER; typeface = typefaceRegular })
+                tracker.canvas.drawText(formatScore(course.score.toString()), rightMargin - 40f, tracker.yPos + 4f, courseInfoPaint)
                 
                 val isAwaiting = course.grade.equals("Awaiting Grade", ignoreCase = true) || course.grade.uppercase() == "AR"
                 val gColor = when {
@@ -243,7 +254,7 @@ object OfficialTranscriptPdfGenerator {
                     else -> Color.parseColor("#DB4437")
                 }
                 
-                val gradeCircleX = rightMargin - 50f
+                val gradeCircleX = rightMargin - 105f
                 val gradeCircleY = tracker.yPos + 1f
                 tracker.canvas.drawCircle(gradeCircleX, gradeCircleY, 14f, Paint().apply { color = gColor })
                 
@@ -271,6 +282,9 @@ object OfficialTranscriptPdfGenerator {
             pdfDocument.close()
         }
     }
+
+    internal fun formatScore(score: String?): String =
+        score?.takeIf { it.isNotBlank() } ?: "-"
 
     private fun drawWrappedText(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint, maxWidth: Float): Float {
         val words = text.split(" ")
