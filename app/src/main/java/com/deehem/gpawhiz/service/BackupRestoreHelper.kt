@@ -64,6 +64,8 @@ object BackupRestoreHelper {
                 put("type", period.type)
                 if (period.label != null) put("label", period.label)
                 put("weeks", period.weeks)
+                if (period.startDate != null) put("startDate", period.startDate)
+                if (period.endDate != null) put("endDate", period.endDate)
             })
         }
         root.put("academicPeriods", academicPeriodsArray)
@@ -292,7 +294,9 @@ object BackupRestoreHelper {
                         sortOrder = item.optInt("sortOrder", i),
                         type = item.optString("type", "LECTURES"),
                         label = if (item.has("label") && !item.isNull("label")) item.optString("label") else null,
-                        weeks = item.optInt("weeks", 1)
+                        weeks = item.optInt("weeks", 1),
+                        startDate = if (item.has("startDate") && !item.isNull("startDate")) item.optLong("startDate") else null,
+                        endDate = if (item.has("endDate") && !item.isNull("endDate")) item.optLong("endDate") else null
                     )
                 )
             }

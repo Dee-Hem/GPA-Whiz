@@ -52,7 +52,9 @@ data class AcademicPeriod(
     val sortOrder: Int,
     val type: String,
     val label: String? = null,
-    val weeks: Int
+    val weeks: Int,
+    val startDate: Long? = null,
+    val endDate: Long? = null
 )
 
 @Entity(tableName = "courses")

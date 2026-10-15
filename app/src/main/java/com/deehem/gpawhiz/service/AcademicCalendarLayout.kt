@@ -15,6 +15,8 @@ object AcademicCalendarLayout {
         val period: AcademicPeriod,
         val startDate: Long,
         val endDate: Long,
+        val totalDays: Int,
+        val weeks: Int,
         val startWeek: Int,
         val endWeek: Int
     )
@@ -28,26 +30,53 @@ object AcademicCalendarLayout {
         val hasEnded: Boolean
     )
 
-    fun validationError(periods: List<AcademicPeriod>): String? {
-        if (periods.any { it.weeks !in 1..30 }) return "Each period must be between 1 and 30 weeks."
-        if (periods.any { it.type !in periodTypes }) return "Unknown academic period type."
-        if (periods.sumOf { it.weeks } > MAX_TOTAL_WEEKS) return "A timeline cannot exceed 60 weeks."
+    fun validationError(periods: List<AcademicPeriod>, timelineStartDate: Long? = null): String? {
+        val ordered = periods.sortedBy { it.sortOrder }
+        if (ordered.any { it.type !in periodTypes }) return "Unknown academic period type."
+        var nextDay = timelineStartDate?.let(::utcDay) ?: ordered.firstOrNull()?.startDate?.let(::utcDay)
+        var totalWeeks = 0
+        for (period in ordered) {
+            if ((period.startDate == null || period.endDate == null) && period.weeks !in 1..30) {
+                return "Each period must be between 1 and 30 weeks."
+            }
+            val start = period.startDate?.let(::utcDay) ?: nextDay
+            val end = period.endDate?.let(::utcDay) ?: start?.plus(period.weeks * DAYS_PER_WEEK - 1)
+            val resolvedWeeks = if (start != null && end != null) {
+                if (end < start) return "A period end date cannot be before its start date."
+                val days = (end - start + 1).toInt()
+                val weeks = (days + DAYS_PER_WEEK - 1) / DAYS_PER_WEEK
+                if (weeks !in 1..30) return "Each period must be between 1 and 30 weeks."
+                weeks
+            } else period.weeks
+            totalWeeks += resolvedWeeks
+            if (totalWeeks > MAX_TOTAL_WEEKS) return "A timeline cannot exceed 60 weeks."
+            nextDay = end?.plus(1) ?: start?.plus(period.weeks * DAYS_PER_WEEK)
+        }
         return null
     }
 
     fun layout(startDate: Long, periods: List<AcademicPeriod>): List<PeriodRange> {
-        require(validationError(periods) == null) { validationError(periods) ?: "Invalid timeline." }
-        var currentDay = utcDay(startDate)
+        require(validationError(periods, startDate) == null) {
+            validationError(periods, startDate) ?: "Invalid timeline."
+        }
+        var nextDay = utcDay(startDate)
         var currentWeek = 1
         return periods.sortedBy { it.sortOrder }.map { period ->
-            val start = currentDay
+            val start = period.startDate?.let(::utcDay) ?: nextDay
+            val end = period.endDate?.let(::utcDay) ?: start + period.weeks * DAYS_PER_WEEK - 1
+            require(end >= start) { "A period end date cannot be before its start date." }
+            val days = (end - start + 1).toInt()
+            val weeks = (days + DAYS_PER_WEEK - 1) / DAYS_PER_WEEK
+            require(weeks in 1..30) { "Each period must be between 1 and 30 weeks." }
             val startWeek = currentWeek
-            currentDay += period.weeks * DAYS_PER_WEEK
-            currentWeek += period.weeks
+            currentWeek += weeks
+            nextDay = end + 1
             PeriodRange(
                 period = period,
                 startDate = start * MILLIS_PER_DAY,
-                endDate = (currentDay - 1) * MILLIS_PER_DAY,
+                endDate = end * MILLIS_PER_DAY,
+                totalDays = days,
+                weeks = weeks,
                 startWeek = startWeek,
                 endWeek = currentWeek - 1
             )
@@ -56,20 +85,37 @@ object AcademicCalendarLayout {
 
     fun position(startDate: Long, periods: List<AcademicPeriod>, date: Long): Position {
         val ranges = layout(startDate, periods)
-        val totalWeeks = periods.sumOf { it.weeks }
+        val totalWeeks = ranges.sumOf { it.weeks }
         val day = utcDay(date)
-        val startDay = utcDay(startDate)
-        val offset = (day - startDay).toInt()
         val matchingRange = ranges.firstOrNull { day in utcDay(it.startDate)..utcDay(it.endDate) }
         val nextRange = ranges.firstOrNull { utcDay(it.startDate) > day }
+        val firstDay = ranges.firstOrNull()?.let { utcDay(it.startDate) } ?: utcDay(startDate)
         return Position(
-            weekNumber = if (matchingRange != null) offset / DAYS_PER_WEEK + 1 else null,
-            totalWeeks = totalWeeks,
+            weekNumber = matchingRange?.let { ((day - utcDay(it.startDate)) / DAYS_PER_WEEK).toInt() + 1 },
+            totalWeeks = matchingRange?.weeks ?: totalWeeks,
             period = matchingRange,
             daysUntilNextPeriod = nextRange?.let { (utcDay(it.startDate) - day).toInt() },
-            daysUntilStart = if (day < startDay) (startDay - day).toInt() else null,
+            daysUntilStart = when {
+                day < firstDay -> (firstDay - day).toInt()
+                matchingRange == null && nextRange != null -> (utcDay(nextRange.startDate) - day).toInt()
+                else -> null
+            },
             hasEnded = ranges.isNotEmpty() && day > utcDay(ranges.last().endDate)
         )
+    }
+
+    fun periodDays(startDate: Long, endDate: Long): Int? {
+        val days = utcDay(endDate) - utcDay(startDate) + 1
+        return days.takeIf { it > 0 }?.toInt()
+    }
+
+    fun weeksForDateRange(startDate: Long, endDate: Long): Int? =
+        periodDays(startDate, endDate)?.let { (it + DAYS_PER_WEEK - 1) / DAYS_PER_WEEK }
+
+    fun defaultNextPeriodStartDate(timelineStartDate: Long?, periods: List<AcademicPeriod>, fallbackDate: Long): Long {
+        if (periods.isEmpty()) return timelineStartDate ?: fallbackDate
+        val baseDate = timelineStartDate ?: periods.first().startDate ?: fallbackDate
+        return layout(baseDate, periods).last().endDate + MILLIS_PER_DAY
     }
 
     fun move(periods: List<AcademicPeriod>, periodId: Int, direction: Int): List<AcademicPeriod> {

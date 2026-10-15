@@ -270,8 +270,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             val ordered = periods.mapIndexed { index, period ->
                 period.copy(semesterId = semester.id, sortOrder = index)
             }
-            if (AcademicCalendarLayout.validationError(ordered) != null) {
-                _uiMessage.value = AcademicCalendarLayout.validationError(ordered)
+            if (AcademicCalendarLayout.validationError(ordered, startDate) != null) {
+                _uiMessage.value = AcademicCalendarLayout.validationError(ordered, startDate)
                 return@launch
             }
             db.withTransaction {

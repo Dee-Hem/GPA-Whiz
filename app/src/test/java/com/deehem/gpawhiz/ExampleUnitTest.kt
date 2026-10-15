@@ -1,6 +1,7 @@
 package com.deehem.gpawhiz
 
 import com.deehem.gpawhiz.data.AssessmentComponent
+import com.deehem.gpawhiz.data.AcademicPeriod
 import com.deehem.gpawhiz.data.Course
 import com.deehem.gpawhiz.data.EssayDraft
 import com.deehem.gpawhiz.data.Exam
@@ -14,6 +15,7 @@ import com.deehem.gpawhiz.service.formatExamDuration
 import com.deehem.gpawhiz.service.formatExamTimeRange
 import com.deehem.gpawhiz.service.isExamEndTimeValid
 import com.deehem.gpawhiz.service.isExamInProgress
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -127,6 +129,44 @@ class ExampleUnitTest {
         assertEquals(1, restored.drafts.size)
         assertEquals("Mastercard Foundation SOP", restored.drafts[0].title)
         assertEquals(500, restored.drafts[0].wordLimit)
+    }
+
+    @Test
+    fun academicPeriodDatesRoundTripAndOlderEntriesRemainUnspecified() {
+        val profile = StudentProfile(id = 1)
+        val semesters = listOf(Semester(id = 1, name = "Semester 1", timelineStartDate = 1_792_000_000_000L))
+        val periods = listOf(
+            AcademicPeriod(
+                id = 5,
+                semesterId = 1,
+                sortOrder = 0,
+                type = "LECTURES",
+                weeks = 5,
+                startDate = 1_792_000_000_000L,
+                endDate = 1_794_678_400_000L
+            ),
+            AcademicPeriod(id = 6, semesterId = 1, sortOrder = 1, type = "EXAMS", weeks = 3)
+        )
+
+        val backup = BackupRestoreHelper.exportToJson(
+            profile = profile,
+            semesters = semesters,
+            courses = emptyList(),
+            timetable = emptyList(),
+            academicPeriods = periods
+        )
+        val restored = BackupRestoreHelper.parseBackupJson(backup)
+
+        assertEquals(periods, restored.academicPeriods)
+        assertEquals(semesters.single().timelineStartDate, restored.semesters.single().timelineStartDate)
+        val olderBackup = JSONObject(backup)
+        olderBackup.getJSONArray("academicPeriods").getJSONObject(0).apply {
+            remove("startDate")
+            remove("endDate")
+        }
+        val olderPeriod = BackupRestoreHelper.parseBackupJson(olderBackup.toString()).academicPeriods.first()
+        assertNull(olderPeriod.startDate)
+        assertNull(olderPeriod.endDate)
     }
 
     @Test

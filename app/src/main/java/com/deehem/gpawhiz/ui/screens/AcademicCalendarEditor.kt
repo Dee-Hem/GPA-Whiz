@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -83,7 +82,7 @@ fun AcademicCalendarEditor(
         mutableStateOf(initialPeriods.sortedBy { it.sortOrder })
     }
     var periodToDelete by remember { mutableStateOf<Int?>(null) }
-    val validationError = AcademicCalendarLayout.validationError(periods)
+    val validationError = AcademicCalendarLayout.validationError(periods, startDate)
     val canSave = validationError == null && (periods.isEmpty() || startDate != null)
 
     Dialog(
@@ -143,14 +142,19 @@ fun AcademicCalendarEditor(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = {
-                                periods = preset(semester.id, listOf("LECTURES" to 13, "EXAMS" to 3))
+                                val baseDate = startDate ?: AcademicCalendarLayout.todayAtUtcMidnight()
+                                startDate = baseDate
+                                periods = datedPreset(semester.id, baseDate, listOf("LECTURES" to 13, "EXAMS" to 3))
                             },
                             modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_preset_lectures_exams")
                         ) { Text("Lectures and exams") }
                         OutlinedButton(
                             onClick = {
-                                periods = preset(
+                                val baseDate = startDate ?: AcademicCalendarLayout.todayAtUtcMidnight()
+                                startDate = baseDate
+                                periods = datedPreset(
                                     semester.id,
+                                    baseDate,
                                     listOf("LECTURES" to 7, "CA_TEST" to 1, "BREAK" to 1, "LECTURES" to 5, "EXAMS" to 3)
                                 )
                             },
@@ -161,12 +165,12 @@ fun AcademicCalendarEditor(
                     Text("Add period", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         academicPeriodTypes.take(2).forEach { type ->
-                            AddPeriodButton(type, semester.id, periods) { periods = it }
+                            AddPeriodButton(type, semester.id, startDate, periods, { startDate = it }) { periods = it }
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         academicPeriodTypes.drop(2).forEach { type ->
-                            AddPeriodButton(type, semester.id, periods) { periods = it }
+                            AddPeriodButton(type, semester.id, startDate, periods, { startDate = it }) { periods = it }
                         }
                     }
 
@@ -177,17 +181,22 @@ fun AcademicCalendarEditor(
                         AcademicPeriodCard(
                             period = period,
                             index = index,
-                            rangeText = ranges.getOrNull(index)?.let { formatRange(it.startDate, it.endDate) },
+                            range = ranges.getOrNull(index),
+                            totalWeeks = ranges.sumOf { it.weeks },
                             canMoveUp = index > 0,
                             canMoveDown = index < periods.lastIndex,
-                            canExtend = period.weeks < 30 && periods.sumOf { it.weeks } < 60,
-                            onWeeksChange = { weeks -> periods = periods.mapIndexed { i, item -> if (i == index) item.copy(weeks = weeks) else item } },
+                            onRangeChange = { rangeStart, rangeEnd ->
+                                val days = AcademicCalendarLayout.periodDays(rangeStart, rangeEnd)
+                                val weeks = AcademicCalendarLayout.weeksForDateRange(rangeStart, rangeEnd)
+                                if (days != null && weeks != null) {
+                                    periods = periods.mapIndexed { i, item ->
+                                        if (i == index) item.copy(startDate = rangeStart, endDate = rangeEnd, weeks = weeks) else item
+                                    }
+                                }
+                            },
                             onTypeChange = { type -> periods = periods.mapIndexed { i, item -> if (i == index) item.copy(type = type) else item } },
                             onLabelChange = { label -> periods = periods.mapIndexed { i, item -> if (i == index) item.copy(label = label.ifBlank { null }) else item } },
                             onMove = { direction -> periods = AcademicCalendarLayout.moveAtIndex(periods, index, direction) },
-                            onExtend = {
-                                periods = AcademicCalendarLayout.extendAtIndex(periods, index)
-                            },
                             onDelete = { periodToDelete = index }
                         )
                     }
@@ -199,7 +208,9 @@ fun AcademicCalendarEditor(
                         Text("Choose a start date to set period dates.", color = MaterialTheme.colorScheme.error)
                     }
                     validationError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Text("${periods.sumOf { it.weeks }} of 60 weeks maximum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val resolvedWeeks = ranges.sumOf { it.weeks }.takeIf { startDate != null && validationError == null }
+                        ?: periods.sumOf { it.weeks }
+                    Text("$resolvedWeeks of 60 weeks maximum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -212,7 +223,14 @@ fun AcademicCalendarEditor(
                     ) { Text("Clear calendar") }
                     TextButton(onClick = onDismiss, modifier = Modifier.height(48.dp)) { Text("Cancel") }
                     Button(
-                        onClick = { onSave(startDate, periods) },
+                        onClick = {
+                            val normalizedPeriods = if (startDate == null) periods else {
+                                AcademicCalendarLayout.layout(startDate!!, periods).map { range ->
+                                    range.period.copy(startDate = range.startDate, endDate = range.endDate, weeks = range.weeks)
+                                }
+                            }
+                            onSave(startDate, normalizedPeriods)
+                        },
                         enabled = canSave,
                         modifier = Modifier.height(48.dp).testTag("calendar_save_button")
                     ) { Text("Save") }
@@ -245,17 +263,24 @@ fun AcademicCalendarEditor(
 private fun RowScope.AddPeriodButton(
     type: String,
     semesterId: Int,
+    timelineStartDate: Long?,
     periods: List<AcademicPeriod>,
+    onTimelineStartDateChange: (Long) -> Unit,
     onPeriodsChange: (List<AcademicPeriod>) -> Unit
 ) {
     OutlinedButton(
         onClick = {
+            val fallbackDate = AcademicCalendarLayout.todayAtUtcMidnight()
+            val nextStart = AcademicCalendarLayout.defaultNextPeriodStartDate(timelineStartDate, periods, fallbackDate)
+            if (timelineStartDate == null && periods.isEmpty()) onTimelineStartDateChange(nextStart)
             onPeriodsChange(
                 (periods + AcademicPeriod(
                     semesterId = semesterId,
                     sortOrder = periods.size,
                     type = type,
-                    weeks = 1
+                    weeks = 1,
+                    startDate = nextStart,
+                    endDate = nextStart + MILLIS_PER_DAY * 7 - 1
                 )).mapIndexed { index, period -> period.copy(sortOrder = index) }
             )
         },
@@ -271,17 +296,17 @@ private fun RowScope.AddPeriodButton(
 private fun AcademicPeriodCard(
     period: AcademicPeriod,
     index: Int,
-    rangeText: String?,
+    range: AcademicCalendarLayout.PeriodRange?,
+    totalWeeks: Int,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
-    canExtend: Boolean,
-    onWeeksChange: (Int) -> Unit,
+    onRangeChange: (Long, Long) -> Unit,
     onTypeChange: (String) -> Unit,
     onLabelChange: (String) -> Unit,
     onMove: (Int) -> Unit,
-    onExtend: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val context = LocalContext.current
     var typeMenuExpanded by remember { mutableStateOf(false) }
     Card(
         modifier = Modifier.fillMaxWidth().testTag("calendar_period_card_$index"),
@@ -310,7 +335,11 @@ private fun AcademicPeriodCard(
                     Icon(Icons.Default.Delete, contentDescription = "Delete period", tint = MaterialTheme.colorScheme.error)
                 }
             }
-            Text(rangeText ?: "Choose a start date to see dates", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                range?.let { formatRange(it.startDate, it.endDate) } ?: "Choose a start date to see dates",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box {
                     OutlinedButton(
@@ -330,17 +359,67 @@ private fun AcademicPeriodCard(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                IconButton(
-                    onClick = { onWeeksChange(period.weeks - 1) },
-                    enabled = period.weeks > 1,
-                    modifier = Modifier.testTag("calendar_weeks_decrease_$index")
-                ) { Icon(Icons.Default.Remove, contentDescription = "Decrease weeks") }
-                Text("${period.weeks} ${if (period.weeks == 1) "week" else "weeks"}", fontWeight = FontWeight.Bold, modifier = Modifier.testTag("calendar_weeks_value_$index"))
-                IconButton(
-                    onClick = { onWeeksChange(period.weeks + 1) },
-                    enabled = canExtend,
-                    modifier = Modifier.testTag("calendar_weeks_increase_$index")
-                ) { Icon(Icons.Default.Add, contentDescription = "Increase weeks") }
+            }
+            if (range != null) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            showCalendarDatePicker(context, range.startDate, maxDate = range.endDate) { selected ->
+                                onRangeChange(selected, range.endDate)
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_period_start_date_$index"),
+                        contentPadding = PaddingValues(horizontal = 6.dp)
+                    ) { Text("Start: ${formatCalendarDate(range.startDate)}", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                    OutlinedButton(
+                        onClick = {
+                            showCalendarDatePicker(context, range.endDate, minDate = range.startDate) { selected ->
+                                onRangeChange(range.startDate, selected)
+                            }
+                        },
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_period_end_date_$index"),
+                        contentPadding = PaddingValues(horizontal = 6.dp)
+                    ) { Text("End: ${formatCalendarDate(range.endDate)}", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                }
+                val durationText = formatDuration(range.weeks, range.totalDays)
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("calendar_period_duration_$index")
+                ) {
+                    Text(
+                        durationText,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                val oneDay = MILLIS_PER_DAY
+                val durationAfterWeek = AcademicCalendarLayout.weeksForDateRange(range.startDate, range.endDate + 7 * oneDay) ?: 31
+                val durationAfterDay = AcademicCalendarLayout.weeksForDateRange(range.startDate, range.endDate + oneDay) ?: 31
+                val durationAfterShorterWeek = AcademicCalendarLayout.periodDays(range.startDate, range.endDate - 7 * oneDay) ?: 0
+                val canAddWeek = durationAfterWeek <= 30 && totalWeeks - range.weeks + durationAfterWeek <= 60
+                val canAddDay = durationAfterDay <= 30 && totalWeeks - range.weeks + durationAfterDay <= 60
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = { onRangeChange(range.startDate, range.endDate - 7 * oneDay) },
+                        enabled = durationAfterShorterWeek > 0,
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_period_minus_week_$index"),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) { Text("-1 week", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                    OutlinedButton(
+                        onClick = { onRangeChange(range.startDate, range.endDate + 7 * oneDay) },
+                        enabled = canAddWeek,
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_period_plus_week_$index"),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) { Text("+1 week", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                    OutlinedButton(
+                        onClick = { onRangeChange(range.startDate, range.endDate + oneDay) },
+                        enabled = canAddDay,
+                        modifier = Modifier.weight(1f).height(48.dp).testTag("calendar_period_plus_day_$index"),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
+                    ) { Text("+1 day", maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                }
             }
             OutlinedTextField(
                 value = period.label.orEmpty(),
@@ -349,35 +428,33 @@ private fun AcademicPeriodCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().testTag("calendar_period_label_$index")
             )
-            OutlinedButton(
-                onClick = onExtend,
-                enabled = canExtend,
-                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("calendar_extend_week_$index")
-            ) { Text("Extend by 1 week") }
         }
     }
 }
 
 @Composable
 private fun AcademicTimelineBar(startDate: Long, periods: List<AcademicPeriod>) {
-    val totalWeeks = periods.sumOf { it.weeks }
-    if (totalWeeks == 0) return
     val ranges = AcademicCalendarLayout.layout(startDate, periods)
+    val totalDays = ranges.sumOf { it.totalDays }
+    if (totalDays == 0) return
     val today = AcademicCalendarLayout.todayAtUtcMidnight()
     val firstDay = ranges.first().startDate
     val lastDay = ranges.last().endDate
-    val showMarker = today in firstDay..lastDay
-    val markerFraction = if (showMarker) {
-        ((today - firstDay).toFloat() / (lastDay - firstDay + 86_400_000L).toFloat()).coerceIn(0f, 1f)
-    } else 0f
+    val todayRangeIndex = ranges.indexOfFirst { today in it.startDate..it.endDate }
+    val showMarker = todayRangeIndex >= 0
+    val markerElapsedDays = if (showMarker) {
+        ranges.take(todayRangeIndex).sumOf { it.totalDays } +
+            ((today - ranges[todayRangeIndex].startDate) / MILLIS_PER_DAY).toInt()
+    } else 0
+    val markerFraction = (markerElapsedDays.toFloat() / totalDays).coerceIn(0f, 1f)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(22.dp).testTag("calendar_timeline_bar")) {
             Row(
                 modifier = Modifier.fillMaxWidth().height(14.dp).align(Alignment.Center).clip(RoundedCornerShape(7.dp))
             ) {
-                periods.forEach { period ->
+                ranges.forEach { range ->
                     Box(
-                        modifier = Modifier.weight(period.weeks.toFloat()).fillMaxHeight().background(periodColor(period.type))
+                        modifier = Modifier.weight(range.totalDays.toFloat()).fillMaxHeight().background(periodColor(range.period.type))
                     )
                 }
             }
@@ -392,12 +469,47 @@ private fun AcademicTimelineBar(startDate: Long, periods: List<AcademicPeriod>) 
                 )
             }
         }
-        Text("${periods.sumOf { it.weeks }} weeks", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${ranges.sumOf { it.weeks }} weeks", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 private fun preset(semesterId: Int, entries: List<Pair<String, Int>>) = entries.mapIndexed { index, (type, weeks) ->
     AcademicPeriod(semesterId = semesterId, sortOrder = index, type = type, weeks = weeks)
+}
+
+private fun datedPreset(semesterId: Int, startDate: Long, entries: List<Pair<String, Int>>) =
+    AcademicCalendarLayout.layout(startDate, preset(semesterId, entries)).map { range ->
+        range.period.copy(startDate = range.startDate, endDate = range.endDate, weeks = range.weeks)
+    }
+
+private fun showCalendarDatePicker(
+    context: android.content.Context,
+    initialDate: Long,
+    minDate: Long? = null,
+    maxDate: Long? = null,
+    onDateSelected: (Long) -> Unit
+) {
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { timeInMillis = initialDate }
+    DatePickerDialog(
+        context,
+        { _, year, month, day -> onDateSelected(AcademicCalendarLayout.dateAtUtcMidnight(year, month, day)) },
+        calendar.get(Calendar.YEAR),
+        calendar.get(Calendar.MONTH),
+        calendar.get(Calendar.DAY_OF_MONTH)
+    ).apply {
+        minDate?.let { datePicker.minDate = it }
+        maxDate?.let { datePicker.maxDate = it }
+    }.show()
+}
+
+private fun formatDuration(weeks: Int, days: Int): String {
+    val fullWeeks = days / 7
+    val remainingDays = days % 7
+    return when {
+        remainingDays == 0 -> "$fullWeeks ${if (fullWeeks == 1) "week" else "weeks"} ($days ${if (days == 1) "day" else "days"})"
+        fullWeeks >= 4 -> "$weeks ${if (weeks == 1) "week" else "weeks"} ($days ${if (days == 1) "day" else "days"})"
+        else -> "$fullWeeks ${if (fullWeeks == 1) "week" else "weeks"}, $remainingDays ${if (remainingDays == 1) "day" else "days"}"
+    }
 }
 
 private fun periodTypeLabel(type: String): String = when (type) {
@@ -413,7 +525,9 @@ private fun periodColor(type: String): Color = when (type) {
     else -> MaterialTheme.colorScheme.secondary
 }
 
-private fun formatCalendarDate(date: Long): String = SimpleDateFormat("d MMMM yyyy", Locale.getDefault()).apply {
+private const val MILLIS_PER_DAY = 86_400_000L
+
+private fun formatCalendarDate(date: Long): String = SimpleDateFormat("d MMM yyyy", Locale.getDefault()).apply {
     timeZone = TimeZone.getTimeZone("UTC")
 }.format(date)
 

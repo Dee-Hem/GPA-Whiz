@@ -24,9 +24,63 @@ class AcademicCalendarLayoutTest {
 
         val position = AcademicCalendarLayout.position(startDate, periods, utcDate(2026, Calendar.NOVEMBER, 9))
         assertEquals(5, position.weekNumber)
-        assertEquals(10, position.totalWeeks)
+        assertEquals(7, position.totalWeeks)
         assertEquals("LECTURES", position.period?.period?.type)
         assertEquals(21, position.daysUntilNextPeriod)
+    }
+
+    @Test
+    fun explicitDateRangesSupportMidweekBoundariesAndFractionalWeeks() {
+        val lectureStart = utcDate(2026, Calendar.OCTOBER, 14)
+        val lectureEnd = utcDate(2026, Calendar.NOVEMBER, 13)
+        val periods = listOf(
+            period(1, 0, "LECTURES", 0).copy(startDate = lectureStart, endDate = lectureEnd),
+            period(2, 1, "EXAMS", 2)
+        )
+
+        val ranges = AcademicCalendarLayout.layout(startDate, periods)
+        assertEquals(31, ranges[0].totalDays)
+        assertEquals(5, ranges[0].weeks)
+        assertEquals(lectureStart, ranges[0].startDate)
+        assertEquals(lectureEnd, ranges[0].endDate)
+        assertEquals(lectureEnd + DAY, ranges[1].startDate)
+        assertEquals(lectureEnd + 14 * DAY, ranges[1].endDate)
+
+        val position = AcademicCalendarLayout.position(startDate, periods, utcDate(2026, Calendar.OCTOBER, 30))
+        assertEquals(3, position.weekNumber)
+        assertEquals(5, position.totalWeeks)
+        assertEquals("LECTURES", position.period?.period?.type)
+        assertEquals(31, AcademicCalendarLayout.periodDays(lectureStart, lectureEnd))
+        assertEquals(5, AcademicCalendarLayout.weeksForDateRange(lectureStart, lectureEnd))
+        assertEquals("LECTURES", AcademicCalendarLayout.position(startDate, periods, lectureEnd).period?.period?.type)
+        assertEquals("EXAMS", AcademicCalendarLayout.position(startDate, periods, lectureEnd + DAY).period?.period?.type)
+    }
+
+    @Test
+    fun explicitGapCountsDownToTheNextPeriod() {
+        val firstEnd = startDate + 6 * DAY
+        val nextStart = startDate + 10 * DAY
+        val periods = listOf(
+            period(1, 0, "LECTURES", 1).copy(startDate = startDate, endDate = firstEnd),
+            period(2, 1, "EXAMS", 1).copy(startDate = nextStart, endDate = nextStart + 6 * DAY)
+        )
+
+        val position = AcademicCalendarLayout.position(startDate, periods, startDate + 8 * DAY)
+        assertNull(position.period)
+        assertEquals(2, position.daysUntilStart)
+        assertEquals(2, position.daysUntilNextPeriod)
+    }
+
+    @Test
+    fun legacyRangesChainFromPreviousResolvedEndAndNextStartHelper() {
+        val first = period(1, 0, "LECTURES", 2).copy(startDate = startDate, endDate = startDate + 13 * DAY)
+        val second = period(2, 1, "CA_TEST", 1)
+        val periods = listOf(first, second)
+
+        val range = AcademicCalendarLayout.layout(startDate, periods).last()
+        assertEquals(first.endDate!! + DAY, range.startDate)
+        assertEquals(first.endDate!! + 7 * DAY, range.endDate)
+        assertEquals(range.endDate + DAY, AcademicCalendarLayout.defaultNextPeriodStartDate(startDate, periods, startDate))
     }
 
     @Test

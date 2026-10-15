@@ -22,7 +22,7 @@ import java.io.File
 @Config(sdk = [34])
 class StudySessionMigrationTest {
     @Test
-    fun roomOpensVersionTenSchemaAndPreservesSemestersAndCoursesInVersionEleven() = runBlocking {
+    fun roomOpensVersionTenSchemaAndPreservesSemestersAndCoursesInVersionTwelve() = runBlocking {
         val context: Context = RuntimeEnvironment.getApplication()
         val databaseName = "academic-calendar-migration-10-to-11.db"
         context.deleteDatabase(databaseName)
@@ -54,7 +54,7 @@ class StudySessionMigrationTest {
         }
 
         val migrated = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
-            .addMigrations(AppDatabase.MIGRATION_10_11)
+            .addMigrations(AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
         try {
@@ -64,7 +64,7 @@ class StudySessionMigrationTest {
             assertEquals(3, migrated.gpaDao().getAllCourses().first().single().id)
             migrated.openHelper.readableDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(11, cursor.getInt(0))
+                assertEquals(12, cursor.getInt(0))
             }
             migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_list(academic_periods)").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -72,9 +72,19 @@ class StudySessionMigrationTest {
                 assertEquals("semester_id", cursor.getString(cursor.getColumnIndexOrThrow("from")))
             }
             val periodId = migrated.gpaDao().insertAcademicPeriod(
-                com.deehem.gpawhiz.data.AcademicPeriod(semesterId = semester.id, sortOrder = 0, type = "LECTURES", weeks = 1)
+                com.deehem.gpawhiz.data.AcademicPeriod(
+                    semesterId = semester.id,
+                    sortOrder = 0,
+                    type = "LECTURES",
+                    weeks = 1,
+                    startDate = 1_792_000_000_000L,
+                    endDate = 1_792_604_800_000L
+                )
             )
             assertTrue(periodId > 0)
+            val storedPeriod = migrated.gpaDao().getAcademicPeriodsForSemester(semester.id).first().single()
+            assertEquals(1_792_000_000_000L, storedPeriod.startDate)
+            assertEquals(1_792_604_800_000L, storedPeriod.endDate)
             migrated.gpaDao().deleteSemester(semester)
             migrated.openHelper.readableDatabase.query("SELECT COUNT(*) FROM academic_periods").use { cursor ->
                 assertTrue(cursor.moveToFirst())
@@ -87,7 +97,7 @@ class StudySessionMigrationTest {
     }
 
     @Test
-    fun roomOpensVersionNineSchemaAndMigratesStudySessionsAndCalendarToVersionEleven() = runBlocking {
+    fun roomOpensVersionNineSchemaAndMigratesStudySessionsAndCalendarToVersionTwelve() = runBlocking {
         val context: Context = RuntimeEnvironment.getApplication()
         val databaseName = "study-session-migration-9-to-10.db"
         context.deleteDatabase(databaseName)
@@ -130,7 +140,7 @@ class StudySessionMigrationTest {
         }
 
         val migrated = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
-            .addMigrations(AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
+            .addMigrations(AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11, AppDatabase.MIGRATION_11_12)
             .allowMainThreadQueries()
             .build()
         try {
@@ -146,7 +156,7 @@ class StudySessionMigrationTest {
             assertEquals("NONE", session.recurrence)
             migrated.openHelper.readableDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(11, cursor.getInt(0))
+                assertEquals(12, cursor.getInt(0))
             }
         } finally {
             migrated.close()
