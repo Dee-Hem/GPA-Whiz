@@ -36,6 +36,14 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    val academicPeriods: StateFlow<List<AcademicPeriod>> = gpaDao.getAllAcademicPeriods()
+        .flowOn(Dispatchers.IO)
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     val courses: StateFlow<List<Course>> = gpaDao.getAllCourses()
         .flowOn(Dispatchers.IO)
         .stateIn(
@@ -254,6 +262,24 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             gpaDao.deleteCoursesForSemester(semester.id)
             gpaDao.deleteSemester(semester)
             _uiMessage.value = "Semester and its courses deleted."
+        }
+    }
+
+    fun saveAcademicCalendar(semester: Semester, startDate: Long?, periods: List<AcademicPeriod>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val ordered = periods.mapIndexed { index, period ->
+                period.copy(semesterId = semester.id, sortOrder = index)
+            }
+            if (AcademicCalendarLayout.validationError(ordered) != null) {
+                _uiMessage.value = AcademicCalendarLayout.validationError(ordered)
+                return@launch
+            }
+            db.withTransaction {
+                gpaDao.updateSemester(semester.copy(timelineStartDate = startDate))
+                gpaDao.deleteAcademicPeriodsForSemester(semester.id)
+                if (ordered.isNotEmpty()) gpaDao.insertAcademicPeriods(ordered)
+            }
+            _uiMessage.value = "Academic calendar saved."
         }
     }
 
@@ -818,7 +844,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             timelineEvents = scholarshipTimelineEvents.value,
             reminders = scholarshipReminders.value,
             drafts = essayDrafts.value,
-            studySessions = studySessions.value
+            studySessions = studySessions.value,
+            academicPeriods = academicPeriods.value
         )
     }
 
@@ -834,6 +861,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                     AlarmScheduler.cancelStudyAlarm(context, it)
                 }
                 gpaDao.clearAllStudySessions()
+                gpaDao.clearAllAcademicPeriods()
                 gpaDao.clearAllSemesters()
                 if (data.exams != null) {
                     gpaDao.clearAllExams()
@@ -850,6 +878,9 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 gpaDao.insertStudentProfile(data.profile)
                 for (sem in data.semesters) {
                     gpaDao.insertSemester(sem)
+                }
+                if (data.academicPeriods.isNotEmpty()) {
+                    gpaDao.insertAcademicPeriods(data.academicPeriods)
                 }
                 for (course in data.courses) {
                     gpaDao.insertCourse(course)

@@ -2,6 +2,8 @@ package com.deehem.gpawhiz
 
 import com.deehem.gpawhiz.data.StudyRecurrence
 import com.deehem.gpawhiz.data.StudySession
+import com.deehem.gpawhiz.data.AcademicPeriod
+import com.deehem.gpawhiz.data.Semester
 import com.deehem.gpawhiz.data.StudentProfile
 import com.deehem.gpawhiz.service.BackupRestoreHelper
 import org.json.JSONArray
@@ -16,6 +18,41 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class StudySessionBackupTest {
+    @Test
+    fun academicCalendarBackupRoundTripPreservesStartDateAndOrderedPeriods() {
+        val semester = Semester(id = 4, name = "Year 2 Semester 1", timelineStartDate = 1_791_763_200_000L)
+        val periods = listOf(
+            AcademicPeriod(id = 20, semesterId = 4, sortOrder = 0, type = "LECTURES", weeks = 7),
+            AcademicPeriod(id = 21, semesterId = 4, sortOrder = 1, type = "CA_TEST", label = "Mid-semester test", weeks = 1)
+        )
+        val backup = BackupRestoreHelper.exportToJson(
+            profile = StudentProfile(),
+            semesters = listOf(semester),
+            courses = emptyList(),
+            timetable = emptyList(),
+            academicPeriods = periods
+        )
+
+        val restored = BackupRestoreHelper.parseBackupJson(backup)
+        assertEquals(semester, restored.semesters.single())
+        assertEquals(periods, restored.academicPeriods)
+    }
+
+    @Test
+    fun academicCalendarBackupRoundTripWithoutTimelineRemainsEmpty() {
+        val semester = Semester(id = 5, name = "Year 1 Semester 2")
+        val backup = BackupRestoreHelper.exportToJson(
+            profile = StudentProfile(),
+            semesters = listOf(semester),
+            courses = emptyList(),
+            timetable = emptyList()
+        )
+
+        val restored = BackupRestoreHelper.parseBackupJson(backup)
+        assertNull(restored.semesters.single().timelineStartDate)
+        assertEquals(emptyList<AcademicPeriod>(), restored.academicPeriods)
+    }
+
     @Test
     fun backupRoundTripPreservesStudySessionSeriesFields() {
         val session = StudySession(

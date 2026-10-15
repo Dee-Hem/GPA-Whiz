@@ -31,8 +31,20 @@ import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.Course
 import com.deehem.gpawhiz.data.Semester
 import com.deehem.gpawhiz.data.StudentProfile
+import com.deehem.gpawhiz.service.AcademicCalendarLayout
 import com.deehem.gpawhiz.service.GpaCalcService
 import com.deehem.gpawhiz.ui.viewmodel.GpaViewModel
+
+private fun academicPeriodDisplayName(type: String): String = when (type) {
+    "CA_TEST" -> "CA / Test"
+    else -> type.lowercase().replaceFirstChar { it.uppercase() }
+}
+
+private fun formatDaysUntilPeriod(days: Int): String = if (days < 7) {
+    "$days ${if (days == 1) "day" else "days"}"
+} else {
+    "${(days + 6) / 7} weeks"
+}
 
 @Composable
 fun DashboardScreen(
@@ -46,6 +58,7 @@ fun DashboardScreen(
 ) {
     val profile by viewModel.studentProfile.collectAsState()
     val semesters by viewModel.semesters.collectAsState()
+    val academicPeriods by viewModel.academicPeriods.collectAsState()
     val courses by viewModel.courses.collectAsState()
     val carryOvers by viewModel.carryOverCourses.collectAsState()
     val scholarships by viewModel.scholarships.collectAsState()
@@ -84,6 +97,30 @@ fun DashboardScreen(
     
     val currentSemester = remember(semesters, profile) {
         semesters.find { it.id == profile.currentSemesterId }
+    }
+
+    val academicCalendarSummary = currentSemester?.timelineStartDate?.let { startDate ->
+        val periods = academicPeriods.filter { it.semesterId == currentSemester.id }.sortedBy { it.sortOrder }
+        if (periods.isEmpty()) null else {
+            val position = AcademicCalendarLayout.position(startDate, periods, AcademicCalendarLayout.todayAtUtcMidnight())
+            when {
+                position.period != null -> {
+                    val activePeriod = position.period.period
+                    val title = activePeriod.label?.takeIf { it.isNotBlank() } ?: academicPeriodDisplayName(activePeriod.type)
+                    val nextPeriod = AcademicCalendarLayout.layout(startDate, periods)
+                        .firstOrNull { it.startDate > AcademicCalendarLayout.todayAtUtcMidnight() }
+                    val nextText = if (nextPeriod != null && position.daysUntilNextPeriod != null) {
+                        val nextName = nextPeriod.period.label?.takeIf { it.isNotBlank() }
+                            ?: academicPeriodDisplayName(nextPeriod.period.type)
+                        " $nextName starts in ${formatDaysUntilPeriod(position.daysUntilNextPeriod)}."
+                    } else ""
+                    "Week ${position.weekNumber} of ${position.totalWeeks}: $title.$nextText"
+                }
+                position.daysUntilStart != null -> "Starts in ${position.daysUntilStart} ${if (position.daysUntilStart == 1) "day" else "days"}."
+                position.hasEnded -> "Ended."
+                else -> null
+            }
+        }
     }
     
     val currentSemesterCourses = remember(courses, profile) {
@@ -217,6 +254,24 @@ fun DashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
+            }
+        }
+
+        academicCalendarSummary?.let { summary ->
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("academic_calendar_dashboard_card"),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Text(summary, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
                 }
             }
         }

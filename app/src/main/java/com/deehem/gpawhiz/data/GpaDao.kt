@@ -28,6 +28,30 @@ interface GpaDao {
     @Query("DELETE FROM semesters")
     suspend fun clearAllSemesters()
 
+    @Query("SELECT * FROM academic_periods WHERE semester_id = :semesterId ORDER BY sort_order ASC")
+    fun getAcademicPeriodsForSemester(semesterId: Int): Flow<List<AcademicPeriod>>
+
+    @Query("SELECT * FROM academic_periods ORDER BY semester_id ASC, sort_order ASC")
+    suspend fun getAcademicPeriodsDirect(): List<AcademicPeriod>
+
+    @Query("SELECT * FROM academic_periods ORDER BY semester_id ASC, sort_order ASC")
+    fun getAllAcademicPeriods(): Flow<List<AcademicPeriod>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAcademicPeriod(period: AcademicPeriod): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAcademicPeriods(periods: List<AcademicPeriod>)
+
+    @Update
+    suspend fun updateAcademicPeriod(period: AcademicPeriod)
+
+    @Query("DELETE FROM academic_periods WHERE semester_id = :semesterId")
+    suspend fun deleteAcademicPeriodsForSemester(semesterId: Int)
+
+    @Query("DELETE FROM academic_periods")
+    suspend fun clearAllAcademicPeriods()
+
     // Courses
     @Query("SELECT * FROM courses")
     fun getAllCourses(): Flow<List<Course>>

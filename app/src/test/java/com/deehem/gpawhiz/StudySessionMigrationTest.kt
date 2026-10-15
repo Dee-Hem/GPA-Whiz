@@ -5,6 +5,7 @@ import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import com.deehem.gpawhiz.data.AppDatabase
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -21,7 +22,72 @@ import java.io.File
 @Config(sdk = [34])
 class StudySessionMigrationTest {
     @Test
-    fun roomOpensVersionNineSchemaAndMigratesStudySessionsToVersionTen() = runBlocking {
+    fun roomOpensVersionTenSchemaAndPreservesSemestersAndCoursesInVersionEleven() = runBlocking {
+        val context: Context = RuntimeEnvironment.getApplication()
+        val databaseName = "academic-calendar-migration-10-to-11.db"
+        context.deleteDatabase(databaseName)
+        val databaseFile = context.getDatabasePath(databaseName)
+        databaseFile.parentFile?.mkdirs()
+
+        val schema = JSONObject(findVersionTenSchema().readText()).getJSONObject("database")
+        val entities = schema.getJSONArray("entities")
+        val oldDatabase = SQLiteDatabase.openOrCreateDatabase(databaseFile, null)
+        try {
+            for (index in 0 until entities.length()) {
+                val entity = entities.getJSONObject(index)
+                oldDatabase.execSQL(entity.getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
+            }
+            for (index in 0 until entities.length()) {
+                val entity = entities.getJSONObject(index)
+                val indices = entity.optJSONArray("indices") ?: JSONArray()
+                for (indexInTable in 0 until indices.length()) {
+                    oldDatabase.execSQL(indices.getJSONObject(indexInTable).getString("createSql").replace("\${TABLE_NAME}", entity.getString("tableName")))
+                }
+            }
+            oldDatabase.execSQL("CREATE TABLE room_master_table (id INTEGER PRIMARY KEY, identity_hash TEXT)")
+            oldDatabase.execSQL("INSERT INTO room_master_table (id, identity_hash) VALUES (42, '${schema.getString("identityHash")}')")
+            oldDatabase.execSQL("PRAGMA user_version = 10")
+            oldDatabase.execSQL("INSERT INTO semesters (id, name, gradingScale, rank) VALUES (1, 'Semester 1', 5.0, 0)")
+            oldDatabase.execSQL("INSERT INTO courses (id, semesterId, code, title, units, score, grade, isCarryOver, assessmentBreakdown) VALUES (3, 1, 'MAT 101', 'Mathematics', 3, 0, 'F', 0, NULL)")
+        } finally {
+            oldDatabase.close()
+        }
+
+        val migrated = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
+            .addMigrations(AppDatabase.MIGRATION_10_11)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val semester = migrated.gpaDao().getAllSemesters().first().single()
+            assertEquals(1, semester.id)
+            assertNull(semester.timelineStartDate)
+            assertEquals(3, migrated.gpaDao().getAllCourses().first().single().id)
+            migrated.openHelper.readableDatabase.query("PRAGMA user_version").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(11, cursor.getInt(0))
+            }
+            migrated.openHelper.readableDatabase.query("PRAGMA foreign_key_list(academic_periods)").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+                assertEquals("semester_id", cursor.getString(cursor.getColumnIndexOrThrow("from")))
+            }
+            val periodId = migrated.gpaDao().insertAcademicPeriod(
+                com.deehem.gpawhiz.data.AcademicPeriod(semesterId = semester.id, sortOrder = 0, type = "LECTURES", weeks = 1)
+            )
+            assertTrue(periodId > 0)
+            migrated.gpaDao().deleteSemester(semester)
+            migrated.openHelper.readableDatabase.query("SELECT COUNT(*) FROM academic_periods").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+        } finally {
+            migrated.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
+    fun roomOpensVersionNineSchemaAndMigratesStudySessionsAndCalendarToVersionEleven() = runBlocking {
         val context: Context = RuntimeEnvironment.getApplication()
         val databaseName = "study-session-migration-9-to-10.db"
         context.deleteDatabase(databaseName)
@@ -64,7 +130,7 @@ class StudySessionMigrationTest {
         }
 
         val migrated = Room.databaseBuilder(context, AppDatabase::class.java, databaseName)
-            .addMigrations(AppDatabase.MIGRATION_9_10)
+            .addMigrations(AppDatabase.MIGRATION_9_10, AppDatabase.MIGRATION_10_11)
             .allowMainThreadQueries()
             .build()
         try {
@@ -80,7 +146,7 @@ class StudySessionMigrationTest {
             assertEquals("NONE", session.recurrence)
             migrated.openHelper.readableDatabase.query("PRAGMA user_version").use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(10, cursor.getInt(0))
+                assertEquals(11, cursor.getInt(0))
             }
         } finally {
             migrated.close()
@@ -100,5 +166,19 @@ class StudySessionMigrationTest {
             directory = current.parentFile
         }
         error("Could not find the checked-in version 9 Room schema.")
+    }
+
+    private fun findVersionTenSchema(): File {
+        var directory: File? = File(System.getProperty("user.dir") ?: ".").canonicalFile
+        repeat(8) {
+            val current = directory ?: return@repeat
+            val candidates = listOf(
+                File(current, "schemas/com.deehem.gpawhiz.data.AppDatabase/10.json"),
+                File(current, "app/schemas/com.deehem.gpawhiz.data.AppDatabase/10.json")
+            )
+            candidates.firstOrNull(File::isFile)?.let { return it }
+            directory = current.parentFile
+        }
+        error("Could not find the checked-in version 10 Room schema.")
     }
 }

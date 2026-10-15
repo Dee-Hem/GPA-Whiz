@@ -39,6 +39,7 @@ fun SemesterScreen(
     modifier: Modifier = Modifier
 ) {
     val semesters by viewModel.semesters.collectAsState()
+    val academicPeriods by viewModel.academicPeriods.collectAsState()
     val courses by viewModel.courses.collectAsState()
     val profile by viewModel.studentProfile.collectAsState()
 
@@ -46,6 +47,7 @@ fun SemesterScreen(
     
     // Dialog / Sheet states
     var showAddSemesterDialog by remember { mutableStateOf(false) }
+    var showAcademicCalendarEditor by remember { mutableStateOf(false) }
     var showAddCourseDialog by remember { mutableStateOf(false) }
     var courseToEdit by remember { mutableStateOf<Course?>(null) }
     var itemToDelete by remember { mutableStateOf<Any?>(null) }
@@ -329,6 +331,15 @@ fun SemesterScreen(
                     }
                 }
 
+                OutlinedButton(
+                    onClick = { showAcademicCalendarEditor = true },
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("open_academic_calendar_button")
+                ) {
+                    Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Academic calendar")
+                }
+
                 // Add Course & Delete Term controls
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -491,6 +502,20 @@ fun SemesterScreen(
                     courseToEdit = null
                 },
                 scale = sem.gradingScale
+            )
+        }
+    }
+
+    if (showAcademicCalendarEditor) {
+        selectedSemester?.let { semester ->
+            AcademicCalendarEditor(
+                semester = semester,
+                initialPeriods = academicPeriods.filter { it.semesterId == semester.id },
+                onDismiss = { showAcademicCalendarEditor = false },
+                onSave = { startDate, periods ->
+                    viewModel.saveAcademicCalendar(semester, startDate, periods)
+                    showAcademicCalendarEditor = false
+                }
             )
         }
     }

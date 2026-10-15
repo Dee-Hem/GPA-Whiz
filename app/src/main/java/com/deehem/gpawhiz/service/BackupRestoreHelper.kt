@@ -17,7 +17,8 @@ object BackupRestoreHelper {
         timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
         reminders: List<ScholarshipReminder> = emptyList(),
         drafts: List<EssayDraft> = emptyList(),
-        studySessions: List<StudySession> = emptyList()
+        studySessions: List<StudySession> = emptyList(),
+        academicPeriods: List<AcademicPeriod> = emptyList()
     ): String {
         val root = JSONObject()
         root.put("schemaVersion", 4)
@@ -48,10 +49,24 @@ object BackupRestoreHelper {
                 put("name", semester.name)
                 put("gradingScale", semester.gradingScale)
                 put("rank", semester.rank)
+                if (semester.timelineStartDate != null) put("timelineStartDate", semester.timelineStartDate)
             }
             semestersArray.put(semJson)
         }
         root.put("semesters", semestersArray)
+
+        val academicPeriodsArray = JSONArray()
+        for (period in academicPeriods) {
+            academicPeriodsArray.put(JSONObject().apply {
+                put("id", period.id)
+                put("semesterId", period.semesterId)
+                put("sortOrder", period.sortOrder)
+                put("type", period.type)
+                if (period.label != null) put("label", period.label)
+                put("weeks", period.weeks)
+            })
+        }
+        root.put("academicPeriods", academicPeriodsArray)
 
         // Courses list
         val coursesArray = JSONArray()
@@ -260,9 +275,27 @@ object BackupRestoreHelper {
                     id = item.optInt("id", 0),
                     name = item.optString("name", "Semester $i"),
                     gradingScale = item.optDouble("gradingScale", 5.0),
-                    rank = item.optInt("rank", 0)
+                    rank = item.optInt("rank", 0),
+                    timelineStartDate = if (item.has("timelineStartDate") && !item.isNull("timelineStartDate")) item.optLong("timelineStartDate") else null
                 )
             )
+        }
+
+        val academicPeriodsList = mutableListOf<AcademicPeriod>()
+        root.optJSONArray("academicPeriods")?.let { periodsArray ->
+            for (i in 0 until periodsArray.length()) {
+                val item = periodsArray.getJSONObject(i)
+                academicPeriodsList.add(
+                    AcademicPeriod(
+                        id = item.optInt("id", 0),
+                        semesterId = item.optInt("semesterId", 0),
+                        sortOrder = item.optInt("sortOrder", i),
+                        type = item.optString("type", "LECTURES"),
+                        label = if (item.has("label") && !item.isNull("label")) item.optString("label") else null,
+                        weeks = item.optInt("weeks", 1)
+                    )
+                )
+            }
         }
 
         // Parse Courses
@@ -474,6 +507,7 @@ object BackupRestoreHelper {
         return BackupData(
             profile = profile,
             semesters = semestersList,
+            academicPeriods = academicPeriodsList,
             courses = coursesList,
             timetable = timetableList,
             exams = if (root.has("exams")) examsList else null,
@@ -490,6 +524,7 @@ object BackupRestoreHelper {
 data class BackupData(
     val profile: StudentProfile,
     val semesters: List<Semester>,
+    val academicPeriods: List<AcademicPeriod> = emptyList(),
     val courses: List<Course>,
     val timetable: List<TimetableSlot>,
     val exams: List<Exam>? = null,

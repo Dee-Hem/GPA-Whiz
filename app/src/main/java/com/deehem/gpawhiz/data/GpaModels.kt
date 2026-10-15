@@ -28,7 +28,31 @@ data class Semester(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val name: String,
     val gradingScale: Double = 5.0, // Scale for this semester (5.0 or 4.0)
-    val rank: Int = 0
+    val rank: Int = 0,
+    val timelineStartDate: Long? = null
+)
+
+@Entity(
+    tableName = "academic_periods",
+    foreignKeys = [
+        ForeignKey(
+            entity = Semester::class,
+            parentColumns = ["id"],
+            childColumns = ["semester_id"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["semester_id"])]
+)
+data class AcademicPeriod(
+    @PrimaryKey(autoGenerate = true) val id: Int = 0,
+    @ColumnInfo(name = "semester_id")
+    val semesterId: Int,
+    @ColumnInfo(name = "sort_order")
+    val sortOrder: Int,
+    val type: String,
+    val label: String? = null,
+    val weeks: Int
 )
 
 @Entity(tableName = "courses")
