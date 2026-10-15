@@ -1,8 +1,11 @@
 package com.deehem.gpawhiz
 
 import com.deehem.gpawhiz.service.PdfTextRect
+import com.deehem.gpawhiz.service.dailyTimetableColumnEdges
 import com.deehem.gpawhiz.service.examSummaryText
+import com.deehem.gpawhiz.service.examTimetableColumnEdges
 import com.deehem.gpawhiz.service.fitPdfText
+import com.deehem.gpawhiz.service.formatCourseUnits
 import com.deehem.gpawhiz.service.formatPdfFooterDate
 import com.deehem.gpawhiz.service.formatPdfShortDate
 import com.deehem.gpawhiz.service.lectureSummaryText
@@ -75,6 +78,67 @@ class PdfTextLayoutTest {
         }
         assertTrue(textRectsStayInside(rectangles, PdfTextRect(0f, 0f, widths.sum(), row.height)))
         assertTrue(textRectsDoNotOverlap(rectangles))
+    }
+
+    @Test
+    fun timetableUnitsFormatWholeDecimalMissingAndZeroValues() {
+        assertEquals("4", formatCourseUnits(4))
+        assertEquals("4.5", formatCourseUnits(4.5))
+        assertEquals("-", formatCourseUnits(null))
+        assertEquals("0", formatCourseUnits(0))
+        assertEquals("4", formatCourseUnits(4.0))
+    }
+
+    @Test
+    fun timetableColumnWidthsStayAlignedForLongTableValues() {
+        val left = 40f
+        val right = 555f
+        val cases = listOf(
+            listOf("08:00-09:00", "CSC 101", "Algorithms", "3", "Hall A", "B12"),
+            listOf("08:00-09:00", "CSC 101", "Algorithms", "3", "V".repeat(60), "B12"),
+            listOf("08:00-09:00", "CSC 101", "T".repeat(40), "3", "Hall A", "B12"),
+            listOf("08:00-09:00", "C".repeat(45), "Algorithms", "3", "Hall A", "B12")
+        )
+        val dailyCases = cases.map { values ->
+            listOf(values[0], values[1], values[2], values[3], values[4])
+        }
+        val examEdges = examTimetableColumnEdges(left, right)
+        val dailyEdges = dailyTimetableColumnEdges(left, right)
+
+        fun assertRowsFit(valuesList: List<List<String>>, edges: List<Float>, horizontalPadding: Float) {
+            assertEquals(valuesList.first().size + 1, edges.size)
+            assertEquals(left, edges.first(), 0f)
+            assertEquals(right, edges.last(), 0f)
+            assertTrue(edges.zipWithNext().all { (first, second) -> second > first })
+            val totalWidth = edges.zipWithNext().sumOf { (it.second - it.first).toDouble() }.toFloat()
+            assertEquals(right - left, totalWidth, 0.001f)
+            val widths = edges.zipWithNext { first, second -> second - first - horizontalPadding }
+            assertTrue(widths.all { it > 0f })
+            for (values in valuesList) {
+                val row = wrapPdfTableRow(values, widths, 8f, 10f, 10f, measure)
+                assertTrue(row.height >= 20f)
+                row.cells.forEachIndexed { index, lines ->
+                    lines.forEach { line -> assertTrue(measure(line, 8f) <= widths[index]) }
+                }
+                val rectangles = row.cells.flatMapIndexed { index, lines ->
+                    lines.mapIndexed { lineIndex, line ->
+                        val textLeft = edges[index] + horizontalPadding / 2f
+                        val textTop = lineIndex * 10f
+                        PdfTextRect(
+                            textLeft,
+                            textTop,
+                            textLeft + measure(line, 8f),
+                            textTop + 8f
+                        )
+                    }
+                }
+                assertTrue(textRectsStayInside(rectangles, PdfTextRect(left, 0f, right, row.height)))
+                assertTrue(textRectsDoNotOverlap(rectangles))
+            }
+        }
+
+        assertRowsFit(cases, examEdges, 8f)
+        assertRowsFit(dailyCases, dailyEdges, 10f)
     }
 
     @Test

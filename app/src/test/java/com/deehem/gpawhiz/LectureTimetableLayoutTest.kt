@@ -2,15 +2,19 @@ package com.deehem.gpawhiz
 
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.service.LectureHourRange
+import com.deehem.gpawhiz.service.PdfTextRect
 import com.deehem.gpawhiz.service.lectureBlockPlacements
 import com.deehem.gpawhiz.service.lectureClashGroups
 import com.deehem.gpawhiz.service.lectureHourRange
 import com.deehem.gpawhiz.service.lectureVisibleDays
 import com.deehem.gpawhiz.service.hourAxisLabelPositions
+import com.deehem.gpawhiz.service.textRectsDoNotOverlap
+import com.deehem.gpawhiz.service.textRectsStayInside
 import com.deehem.gpawhiz.service.timetableCourseColor
 import com.deehem.gpawhiz.service.weeklyDayColumnWidth
-import com.deehem.gpawhiz.service.weeklyBlockTextMode
-import com.deehem.gpawhiz.service.WeeklyBlockTextMode
+import com.deehem.gpawhiz.service.weeklyBlockNeedsClashDetails
+import com.deehem.gpawhiz.service.weeklyBlockTextLayout
+import com.deehem.gpawhiz.service.WeeklyBlockTextKind
 import com.deehem.gpawhiz.service.wrapPdfText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -117,9 +121,46 @@ class LectureTimetableLayoutTest {
         val titleLines = wrapPdfText(longTitle, 60f, 7f) { text, size -> text.length * size * 0.5f }
         assertTrue(titleLines.size > 1)
         assertEquals(longTitle, titleLines.joinToString(" "))
-        assertEquals(WeeklyBlockTextMode.INLINE, weeklyBlockTextMode(100f, 11f, 28f, 45f))
-        assertEquals(WeeklyBlockTextMode.CODE_ONLY, weeklyBlockTextMode(28f, 11f, 28f, 45f))
-        assertEquals(WeeklyBlockTextMode.STACKED, weeklyBlockTextMode(100f, 22f, 28f, 45f))
+        val text = weeklyBlockTextLayout(shortLecture, 45f, 100f) { value, size ->
+            value.length * size * 0.5f
+        }
+        assertTrue(text.fits)
+        assertTrue(text.lines.any { it.kind == WeeklyBlockTextKind.COURSE_CODE })
+        assertTrue(text.lines.any { it.kind == WeeklyBlockTextKind.TIME })
+        assertTrue(text.lines.any { it.kind == WeeklyBlockTextKind.VENUE })
+        assertTrue(text.lines.filter { it.kind == WeeklyBlockTextKind.COURSE_CODE }.all { it.textSize >= 7.5f })
+    }
+
+    @Test
+    fun weeklyGridTextFitsSingleHalfHourFourWayClashAndTwelveLectureCases() {
+        val singleLecture = slot(1, day = 1, start = "08:00", end = "09:00")
+        val halfHourLecture = slot(2, day = 3, start = "09:00", end = "09:30")
+        val fourWayClash = (0 until 4).map { index ->
+            slot(index + 10, day = 2, start = "10:00", end = "11:00")
+        }
+        val twelveLectures = (0 until 12).map { index ->
+            slot(index + 30, day = index % 7 + 1, start = "09:00", end = "10:00")
+        }
+
+        listOf(singleLecture, halfHourLecture).forEach { assertWeeklyBlockText(listOf(it)) }
+        assertWeeklyBlockText(fourWayClash)
+        assertWeeklyBlockText(twelveLectures)
+        assertTrue(weeklyBlockNeedsClashDetails(22f))
+        assertFalse(weeklyBlockNeedsClashDetails(30f))
+    }
+
+    @Test
+    fun weeklyBlockWithoutVenueStillIncludesCodeAndTime() {
+        val lecture = slot(1, day = 1, start = "08:00", end = "09:00").copy(venue = "")
+        val layout = weeklyBlockTextLayout(lecture, 70f, 50f) { text, size ->
+            text.length * size * 0.5f
+        }
+        val kinds = layout.lines.map { it.kind }.toSet()
+
+        assertTrue(layout.fits)
+        assertTrue(WeeklyBlockTextKind.COURSE_CODE in kinds)
+        assertTrue(WeeklyBlockTextKind.TIME in kinds)
+        assertFalse(WeeklyBlockTextKind.VENUE in kinds)
     }
 
     @Test
@@ -144,4 +185,70 @@ class LectureTimetableLayoutTest {
         startTime = start,
         endTime = end
     )
+
+    private fun assertWeeklyBlockText(slots: List<TimetableSlot>) {
+        val measure: (String, Float) -> Float = { text, size -> text.length * size * 0.5f }
+        val range = requireNotNull(lectureHourRange(slots))
+        val days = lectureVisibleDays(slots)
+        val margin = 40f
+        val axisWidth = 39f
+        val dayWidth = weeklyDayColumnWidth(842f, days.size, margin, axisWidth)
+        val placements = lectureBlockPlacements(slots, range)
+        val slotsById = slots.associateBy { it.id }
+        val minimumGridHeight = placements.maxOf { placement ->
+            val laneWidth = dayWidth / placement.laneCount
+            val textWidth = laneWidth - 2.4f - 3f - (if (placement.hasClash) 8f else 3f)
+            val layout = weeklyBlockTextLayout(slotsById.getValue(placement.slotId), textWidth, 0f, measure)
+            (layout.requiredHeight + 3.6f) / placement.heightFraction
+        }
+        val gridHeight = maxOf(220f, minimumGridHeight)
+        val gridLeft = margin + axisWidth
+        val allTextRects = mutableListOf<PdfTextRect>()
+
+        for (placement in placements) {
+            val slot = slotsById.getValue(placement.slotId)
+            val dayIndex = days.indexOf(slot.dayOfWeek)
+            val laneWidth = dayWidth / placement.laneCount
+            val blockLeft = gridLeft + dayWidth * dayIndex + laneWidth * placement.laneIndex + 1.2f
+            val blockRight = gridLeft + dayWidth * dayIndex + laneWidth * (placement.laneIndex + 1) - 1.2f
+            val blockTop = placement.topFraction * gridHeight + 0.8f
+            val blockBottom = (placement.topFraction + placement.heightFraction) * gridHeight - 0.8f
+            val x = blockLeft + 3f
+            val textWidth = blockRight - (if (placement.hasClash) 8f else 3f) - x
+            val layout = weeklyBlockTextLayout(
+                slot,
+                textWidth,
+                blockBottom - blockTop - 2f,
+                measure
+            )
+
+            assertTrue("text fits in block ${slot.courseCode}", layout.fits)
+            assertTrue(layout.lines.any { it.kind == WeeklyBlockTextKind.COURSE_CODE })
+            assertTrue(layout.lines.any { it.kind == WeeklyBlockTextKind.TIME })
+            if (slot.venue.isNotBlank()) assertTrue(layout.lines.any { it.kind == WeeklyBlockTextKind.VENUE })
+            val codeSize = layout.lines.filter { it.kind == WeeklyBlockTextKind.COURSE_CODE }.minOf { it.textSize }
+            val detailSize = layout.lines.filter { it.kind != WeeklyBlockTextKind.COURSE_CODE }.minOf { it.textSize }
+            assertTrue(codeSize >= detailSize)
+
+            val joinedText = layout.lines.joinToString("") { it.text }.filterNot(Char::isWhitespace)
+            assertTrue(joinedText.contains(slot.courseCode.filterNot(Char::isWhitespace)))
+            assertTrue(joinedText.contains("${slot.startTime}-${slot.endTime}"))
+            if (slot.venue.isNotBlank()) {
+                assertTrue(joinedText.contains(slot.venue.filterNot(Char::isWhitespace)))
+            }
+
+            val blockBounds = PdfTextRect(blockLeft, blockTop, blockRight, blockBottom)
+            val lineRects = layout.lines.map { line ->
+                PdfTextRect(
+                    x + line.bounds.left,
+                    blockTop + line.bounds.top,
+                    x + line.bounds.right,
+                    blockTop + line.bounds.bottom
+                )
+            }
+            assertTrue(textRectsStayInside(lineRects, blockBounds))
+            allTextRects += lineRects
+        }
+        assertTrue(textRectsDoNotOverlap(allTextRects))
+    }
 }

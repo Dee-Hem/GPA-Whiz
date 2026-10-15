@@ -1,6 +1,37 @@
 package com.deehem.gpawhiz.service
 
+import java.math.BigDecimal
 import kotlin.math.floor
+
+fun formatCourseUnits(units: Number?): String =
+    units?.let { BigDecimal(it.toString()).stripTrailingZeros().toPlainString() } ?: "-"
+
+fun examTimetableColumnEdges(left: Float, right: Float): List<Float> {
+    require(right > left) { "Timetable table width must be positive." }
+    val width = right - left
+    return listOf(
+        left,
+        left + width * 0.10f,
+        left + width * 0.22f,
+        left + width * 0.58f,
+        left + width * 0.64f,
+        left + width * 0.90f,
+        right
+    )
+}
+
+fun dailyTimetableColumnEdges(left: Float, right: Float): List<Float> {
+    require(right > left) { "Timetable table width must be positive." }
+    val width = right - left
+    return listOf(
+        left,
+        left + width * 0.10f,
+        left + width * 0.23f,
+        left + width * 0.66f,
+        left + width * 0.72f,
+        right
+    )
+}
 
 data class PdfFittedText(
     val lines: List<String>,

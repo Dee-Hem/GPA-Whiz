@@ -173,6 +173,7 @@ object ExamTimetablePdfGenerator {
             formatExamTimeRange(exam.time, exam.endTime),
             courseCode,
             linkedCourse?.title?.ifBlank { "-" } ?: "-",
+            formatCourseUnits(linkedCourse?.units),
             exam.venue.ifBlank { "-" },
             exam.seatNumber.ifBlank { "-" }
         )
@@ -189,8 +190,8 @@ object ExamTimetablePdfGenerator {
             exam,
             values[2],
             courseCode,
-            values[3],
             values[4],
+            values[5],
             wrapped
         )
     }
@@ -206,8 +207,14 @@ object ExamTimetablePdfGenerator {
         canvas.drawRect(edges.first(), top, right, top + TABLE_HEADER_HEIGHT, fillPaint)
         canvas.drawRect(edges.first(), top, right, top + TABLE_HEADER_HEIGHT, borderPaint.apply { style = Paint.Style.STROKE })
         val headerPaint = LectureTimetablePdfStyle.paint(7f, LectureTimetablePdfStyle.brandBlue, bold = true)
-        listOf("TIME", "COURSE CODE", "COURSE TITLE", "VENUE", "SEAT NO.").forEachIndexed { index, label ->
-            canvas.drawText(label, edges[index] + 4f, top + 13f, headerPaint)
+        listOf("TIME", "COURSE CODE", "COURSE TITLE", "Units", "VENUE", "SEAT NO.")
+            .forEachIndexed { index, label ->
+            val x = if (index == 3) (edges[index] + edges[index + 1]) / 2f else edges[index] + 4f
+            val paint = if (index == 3) {
+                LectureTimetablePdfStyle.paint(7f, LectureTimetablePdfStyle.brandBlue, bold = true)
+                    .apply { textAlign = Paint.Align.CENTER }
+            } else headerPaint
+            canvas.drawText(label, x, top + 13f, paint)
             if (index > 0) canvas.drawLine(edges[index], top, edges[index], top + TABLE_HEADER_HEIGHT, borderPaint)
         }
     }
@@ -233,8 +240,11 @@ object ExamTimetablePdfGenerator {
         canvas.drawRect(edges.first(), top, right, top + row.wrapped.height, borderPaint)
 
         row.wrapped.cells.forEachIndexed { index, lines ->
-            val x = edges[index] + 4f
-            val paint = if (index == 1) {
+            val isUnits = index == 3
+            val x = if (isUnits) (edges[index] + edges[index + 1]) / 2f else edges[index] + 4f
+            val paint = if (isUnits) {
+                LectureTimetablePdfStyle.paint(8f, textColor).apply { textAlign = Paint.Align.CENTER }
+            } else if (index == 1) {
                 LectureTimetablePdfStyle.paint(8f, textColor, bold = true)
             } else LectureTimetablePdfStyle.paint(8f, textColor)
             lines.forEachIndexed { lineIndex, line ->
@@ -271,15 +281,9 @@ object ExamTimetablePdfGenerator {
     }
 
     private fun columnEdges(): List<Float> {
-        val left = LectureTimetablePdfStyle.MARGIN
-        val width = LectureTimetablePdfStyle.PAGE_WIDTH - 2 * LectureTimetablePdfStyle.MARGIN
-        return listOf(
-            left,
-            left + width * 0.13f,
-            left + width * 0.27f,
-            left + width * 0.61f,
-            left + width * 0.86f,
-            left + width
+        return examTimetableColumnEdges(
+            LectureTimetablePdfStyle.MARGIN,
+            LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN
         )
     }
 

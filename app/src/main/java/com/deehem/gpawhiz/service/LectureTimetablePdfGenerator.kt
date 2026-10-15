@@ -41,6 +41,11 @@ object LectureTimetablePdfGenerator {
         val wrapped: PdfWrappedRow
     )
 
+    private data class ClashDetailRow(
+        val cells: List<List<String>>,
+        val height: Float
+    )
+
     private data class LegendRow(
         val course: LegendCourse,
         val codeLines: List<String>,
@@ -101,14 +106,46 @@ object LectureTimetablePdfGenerator {
             }
         }
         val hourRange = requireNotNull(lectureHourRange(slots))
+        val days = lectureVisibleDays(slots)
+        val dayWidth = weeklyDayColumnWidth(
+            pageWidth.toFloat(),
+            days.size,
+            LectureTimetablePdfStyle.MARGIN,
+            39f
+        )
+        val placements = lectureBlockPlacements(slots, hourRange)
+        val slotById = slots.associateBy { it.id }
+        val blockMeasurePaint = LectureTimetablePdfStyle.paint(8f, bold = true)
+        val blockMeasure: (String, Float) -> Float = { text, size ->
+            LectureTimetablePdfStyle.measureText(blockMeasurePaint, text, size)
+        }
+        val clashDetailSlots = placements.filter { placement ->
+            slotById.containsKey(placement.slotId) && placement.hasClash && weeklyBlockNeedsClashDetails(
+                weeklyBlockTextWidth(dayWidth, placement.laneCount, hasClash = true)
+            )
+        }.mapNotNull { slotById[it.slotId] }.distinctBy { it.id }
+        val clashDetailRows = createClashDetailRows(clashDetailSlots, pageWidth)
+        val clashNotesHeight = if (clashLines.isEmpty()) 0f else 11f + clashLines.size * 9f
+        val clashDetailsHeight = if (clashDetailRows.isEmpty()) 0f else {
+            5f + 28f + clashDetailRows.sumOf { it.height.toDouble() }.toFloat()
+        }
+        val clashHeight = clashNotesHeight + clashDetailsHeight
+        val requiredGridHeight = placements.maxOfOrNull { placement ->
+            val slot = slotById.getValue(placement.slotId)
+            val textWidth = weeklyBlockTextWidth(dayWidth, placement.laneCount, placement.hasClash)
+            val minimumLayout = weeklyBlockTextLayout(slot, textWidth, 0f, blockMeasure)
+            (minimumLayout.requiredHeight + 3.6f) / placement.heightFraction
+        } ?: 0f
         val headerBottom = LectureTimetablePdfStyle.measureHeaderBottom(student, pageWidth, summary)
         val gridTop = headerBottom + 48f
         val contentBottom = pageHeight - 42f
-        val clashHeight = if (clashLines.isEmpty()) 0f else 11f + clashLines.size * 9f
         val legendHeight = if (legendRows.isEmpty()) 0f else 36f + legendRows.sumOf { it.height.toDouble() }.toFloat()
         val legendGap = if (legendHeight == 0f) 0f else 17f
         val clashGap = if (clashHeight == 0f) 0f else 9f
-        val minimumGridHeight = max(55f, hourRange.durationMinutes / 60f * 12f)
+        val minimumGridHeight = max(
+            max(55f, hourRange.durationMinutes / 60f * 12f),
+            requiredGridHeight
+        )
         val drawLegendOnGridPage =
             gridTop + minimumGridHeight + clashHeight + clashGap + legendGap + legendHeight <= contentBottom
         val gridBottom = contentBottom - clashHeight - clashGap -
@@ -136,7 +173,12 @@ object LectureTimetablePdfGenerator {
             clashLines.forEachIndexed { index, line ->
                 canvas.drawText(line, LectureTimetablePdfStyle.MARGIN + 48f, noteTop + 8f + index * 9f, notePaint)
             }
-            noteTop += clashHeight
+            noteTop += clashNotesHeight
+        }
+        if (clashDetailRows.isNotEmpty()) {
+            noteTop += 5f
+            drawClashDetails(canvas, clashDetailRows, noteTop, pageWidth)
+            noteTop += 28f + clashDetailRows.sumOf { it.height.toDouble() }.toFloat()
         }
         val nextLegendTop = LectureTimetablePdfStyle.measureHeaderBottom(student, pageWidth, summary) + 18f
         val legendPages = paginateLegendRows(
@@ -268,67 +310,86 @@ object LectureTimetablePdfGenerator {
         val textRight = right - if (hasClash) 8f else 3f
         val x = left + 3f
         val maxWidth = (textRight - x).coerceAtLeast(1f)
-        val blockHeight = bottom - top
-        val smallPaint = LectureTimetablePdfStyle.paint(7f, colors.text)
-        val boldPaint = LectureTimetablePdfStyle.paint(7f, colors.text, bold = true)
-        val timeRange = "${slot.startTime}-${slot.endTime}"
-        val lineHeight = 8.75f
-        val codeWidth = LectureTimetablePdfStyle.measureText(boldPaint, slot.courseCode, 7f)
-        val timeWidth = LectureTimetablePdfStyle.measureText(smallPaint, timeRange, 7f)
-        val textMode = weeklyBlockTextMode(maxWidth, blockHeight, codeWidth, timeWidth, lineHeight)
-        if (textMode == WeeklyBlockTextMode.INLINE) {
-            canvas.drawText(slot.courseCode, x, top + 7.5f, boldPaint)
-            canvas.drawText(timeRange, x + codeWidth + 4f, top + 7.5f, smallPaint)
-            if (hasClash) drawClashMarker(canvas, right, top, colors)
-            return
-        }
-
-        var baseline = top + 7.5f
-        val contentHeight = blockHeight.coerceAtLeast(0f)
-        val codeFit = fitPdfText(
-            slot.courseCode,
+        val measurePaint = LectureTimetablePdfStyle.paint(8f, colors.text, bold = true)
+        val layout = weeklyBlockTextLayout(
+            slot,
             maxWidth,
-            contentHeight,
-            7f,
-            7f,
-            { text, size -> LectureTimetablePdfStyle.measureText(boldPaint, text, size) }
-        )
-        codeFit.lines.forEach { line ->
-            canvas.drawText(line, x, baseline, boldPaint)
-            baseline += lineHeight
-        }
-
-        val hasRoomForTime = textMode == WeeklyBlockTextMode.STACKED &&
-            baseline + lineHeight <= bottom - 1f
-        if (hasRoomForTime) {
-            val timeFit = fitPdfText(
-                timeRange,
-                maxWidth,
-                bottom - baseline - 1f,
-                7f,
-                7f
-            ) { text, size -> LectureTimetablePdfStyle.measureText(smallPaint, text, size) }
-            timeFit.lines.forEach { line ->
-                canvas.drawText(line, x, baseline, smallPaint)
-                baseline += lineHeight
-            }
-        }
-        if (hasRoomForTime && baseline + lineHeight <= bottom - 1f && slot.venue.isNotBlank()) {
-            val venueFit = fitPdfText(
-                slot.venue,
-                maxWidth,
-                bottom - baseline - 1f,
-                7f,
-                7f
-            ) { text, size -> LectureTimetablePdfStyle.measureText(smallPaint, text, size) }
-            venueFit.lines.forEach { line ->
-                canvas.drawText(line, x, baseline, smallPaint)
-                baseline += lineHeight
-            }
+            bottom - top - 2f
+        ) { text, size -> LectureTimetablePdfStyle.measureText(measurePaint, text, size) }
+        require(layout.fits) { "Weekly lecture block text does not fit its allocated block." }
+        for (line in layout.lines) {
+            val bold = line.kind == WeeklyBlockTextKind.COURSE_CODE
+            val paint = LectureTimetablePdfStyle.paint(line.textSize, colors.text, bold)
+            canvas.drawText(line.text, x + line.bounds.left, top + line.bounds.bottom, paint)
         }
 
         if (hasClash) {
             drawClashMarker(canvas, right, top, colors)
+        }
+    }
+
+    private fun weeklyBlockTextWidth(dayWidth: Float, laneCount: Int, hasClash: Boolean): Float {
+        val laneWidth = dayWidth / laneCount
+        return (laneWidth - 2.4f - 3f - if (hasClash) 8f else 3f).coerceAtLeast(1f)
+    }
+
+    private fun createClashDetailRows(slots: List<TimetableSlot>, pageWidth: Int): List<ClashDetailRow> {
+        val left = LectureTimetablePdfStyle.MARGIN
+        val right = pageWidth - LectureTimetablePdfStyle.MARGIN
+        val edges = listOf(left, left + (right - left) * 0.22f, left + (right - left) * 0.38f, right)
+        val paint = LectureTimetablePdfStyle.paint(6.5f)
+        val measure: (String, Float) -> Float = { text, size ->
+            LectureTimetablePdfStyle.measureText(paint, text, size)
+        }
+        return slots.map { slot ->
+            val values = listOf(
+                slot.courseCode.ifBlank { "-" },
+                "${slot.startTime}-${slot.endTime}",
+                slot.venue.ifBlank { "-" }
+            )
+            val widths = edges.zipWithNext { first, second -> second - first - 8f }
+            val cells = values.mapIndexed { index, value ->
+                wrapPdfText(value, widths[index], 6.5f, measure).ifEmpty { listOf("-") }
+            }
+            ClashDetailRow(cells, maxOf(cells.maxOf { it.size }, 1) * 8f + 4f)
+        }
+    }
+
+    private fun drawClashDetails(
+        canvas: Canvas,
+        rows: List<ClashDetailRow>,
+        top: Float,
+        pageWidth: Int
+    ) {
+        val left = LectureTimetablePdfStyle.MARGIN
+        val right = pageWidth - LectureTimetablePdfStyle.MARGIN
+        val width = right - left
+        val edges = listOf(left, left + width * 0.22f, left + width * 0.38f, right)
+        val headingPaint = LectureTimetablePdfStyle.paint(7f, LectureTimetablePdfStyle.darkText, bold = true)
+        val headerPaint = LectureTimetablePdfStyle.paint(6.5f, LectureTimetablePdfStyle.brandBlue, bold = true)
+        val borderPaint = Paint().apply { color = LectureTimetablePdfStyle.borderLight; strokeWidth = 0.55f }
+        canvas.drawText("Clash details", left, top + 8f, headingPaint)
+        val headerTop = top + 13f
+        val headerBottom = headerTop + 15f
+        canvas.drawRect(left, headerTop, right, headerBottom, Paint().apply { color = LectureTimetablePdfStyle.lightGrey })
+        canvas.drawRect(left, headerTop, right, headerBottom, borderPaint.apply { style = Paint.Style.STROKE })
+        listOf("CODE", "TIME", "VENUE").forEachIndexed { index, label ->
+            canvas.drawText(label, edges[index] + 4f, headerTop + 10f, headerPaint)
+            if (index > 0) canvas.drawLine(edges[index], headerTop, edges[index], headerBottom, borderPaint)
+        }
+        var rowTop = headerBottom
+        for (row in rows) {
+            val rowBottom = rowTop + row.height
+            canvas.drawRect(left, rowTop, right, rowBottom, Paint().apply { color = Color.WHITE })
+            canvas.drawRect(left, rowTop, right, rowBottom, borderPaint)
+            row.cells.forEachIndexed { index, lines ->
+                val rowPaint = LectureTimetablePdfStyle.paint(6.5f, LectureTimetablePdfStyle.darkText)
+                lines.forEachIndexed { lineIndex, line ->
+                    canvas.drawText(line, edges[index] + 4f, rowTop + 7f + lineIndex * 8f, rowPaint)
+                }
+                if (index > 0) canvas.drawLine(edges[index], rowTop, edges[index], rowBottom, borderPaint)
+            }
+            rowTop = rowBottom
         }
     }
 
@@ -579,10 +640,16 @@ object LectureTimetablePdfGenerator {
         val borderPaint = Paint().apply { color = LectureTimetablePdfStyle.borderLight; strokeWidth = 0.7f }
         canvas.drawRect(left, top, right, top + TABLE_HEADER_HEIGHT, headerPaint)
         canvas.drawRect(left, top, right, top + TABLE_HEADER_HEIGHT, borderPaint.apply { style = Paint.Style.STROKE })
-        val labels = listOf("TIME", "COURSE CODE", "COURSE TITLE", "VENUE")
+        val labels = listOf("TIME", "COURSE CODE", "COURSE TITLE", "Units", "VENUE")
         val textPaint = LectureTimetablePdfStyle.paint(7f, LectureTimetablePdfStyle.brandBlue, bold = true)
         labels.forEachIndexed { index, label ->
-            canvas.drawText(label, columns[index] + 5f, top + 13f, textPaint)
+            val isUnits = index == 3
+            val headerPaint = if (isUnits) {
+                LectureTimetablePdfStyle.paint(7f, LectureTimetablePdfStyle.brandBlue, bold = true)
+                    .apply { textAlign = Paint.Align.CENTER }
+            } else textPaint
+            val x = if (isUnits) (columns[index] + columns[index + 1]) / 2f else columns[index] + 5f
+            canvas.drawText(label, x, top + 13f, headerPaint)
             if (index > 0) canvas.drawLine(columns[index], top, columns[index], top + TABLE_HEADER_HEIGHT, borderPaint)
         }
     }
@@ -600,8 +667,15 @@ object LectureTimetablePdfGenerator {
         canvas.drawRect(left, top, right, top + row.wrapped.height, Paint().apply { color = android.graphics.Color.WHITE })
         canvas.drawRect(left, top, right, top + row.wrapped.height, borderPaint.apply { style = Paint.Style.STROKE })
         row.wrapped.cells.forEachIndexed { index, lines ->
-            val x = columns[index] + 5f
-            val textPaint = LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText, bold = index == 1)
+            val isUnits = index == 3
+            val x = if (isUnits) (columns[index] + columns[index + 1]) / 2f else columns[index] + 5f
+            val textPaint = LectureTimetablePdfStyle.paint(
+                8f,
+                LectureTimetablePdfStyle.darkText,
+                bold = index == 1
+            ).apply {
+                if (isUnits) textAlign = Paint.Align.CENTER
+            }
             lines.forEachIndexed { lineIndex, line ->
                 canvas.drawText(line, x, top + 9f + textPaint.textSize + lineIndex * 10f, textPaint)
             }
@@ -615,6 +689,7 @@ object LectureTimetablePdfGenerator {
             "${slot.startTime}-${slot.endTime}",
             slot.courseCode,
             course?.title?.ifBlank { "-" } ?: "-",
+            formatCourseUnits(course?.units),
             slot.venue.ifBlank { "-" }
         )
         val widths = columns.zipWithNext { left, right -> right - left - 10f }
@@ -630,8 +705,7 @@ object LectureTimetablePdfGenerator {
     }
 
     private fun dailyColumnEdges(left: Float, right: Float): List<Float> {
-        val total = right - left
-        return listOf(left, left + total * 0.14f, left + total * 0.32f, left + total * 0.73f, right)
+        return dailyTimetableColumnEdges(left, right)
     }
 
     private fun buildLegendCourses(
@@ -640,7 +714,7 @@ object LectureTimetablePdfGenerator {
     ): List<LegendCourse> =
         slots.map { slot ->
             val course = slot.courseId?.let(courseById::get)
-            LegendCourse(slot.courseCode, course?.title.orEmpty(), course?.units?.toString().orEmpty())
+            LegendCourse(slot.courseCode, course?.title.orEmpty(), formatCourseUnits(course?.units))
         }.distinctBy { it.code.trim().uppercase(Locale.ROOT) }
             .sortedBy { it.code.uppercase(Locale.ROOT) }
 

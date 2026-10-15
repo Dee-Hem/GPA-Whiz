@@ -20,10 +20,63 @@ data class LectureBlockPlacement(
     val hasClash: Boolean
 )
 
-enum class WeeklyBlockTextMode {
-    STACKED,
-    INLINE,
-    CODE_ONLY
+enum class WeeklyBlockTextKind {
+    COURSE_CODE,
+    TIME,
+    VENUE
+}
+
+data class WeeklyBlockTextLine(
+    val text: String,
+    val kind: WeeklyBlockTextKind,
+    val textSize: Float,
+    val bounds: PdfTextRect
+)
+
+data class WeeklyBlockTextLayout(
+    val lines: List<WeeklyBlockTextLine>,
+    val requiredHeight: Float,
+    val fits: Boolean
+)
+
+fun weeklyBlockTextLayout(
+    slot: TimetableSlot,
+    maxWidth: Float,
+    maxHeight: Float,
+    measure: (String, Float) -> Float
+): WeeklyBlockTextLayout {
+    require(maxWidth > 0f) { "Weekly block text width must be positive." }
+    val timeRange = "${slot.startTime}-${slot.endTime}"
+    val content = buildList {
+        add(WeeklyBlockTextKind.COURSE_CODE to slot.courseCode.ifBlank { "-" })
+        add(WeeklyBlockTextKind.TIME to timeRange)
+        if (slot.venue.isNotBlank()) add(WeeklyBlockTextKind.VENUE to slot.venue)
+    }
+    var smallestLayout: WeeklyBlockTextLayout? = null
+
+    for (codeSize in listOf(8f, 7.5f, 7f, 6.5f)) {
+        val detailSize = maxOf(6.5f, codeSize - 1f)
+        val lineHeight = maxOf(codeSize, detailSize) * 1.2f
+        val textLines = content.flatMap { (kind, text) ->
+            wrapPdfText(text, maxWidth, if (kind == WeeklyBlockTextKind.COURSE_CODE) codeSize else detailSize, measure)
+                .map { kind to it }
+        }
+        val lines = textLines.mapIndexed { index, (kind, text) ->
+            val textSize = if (kind == WeeklyBlockTextKind.COURSE_CODE) codeSize else detailSize
+            val lineTop = 1f + index * lineHeight
+            WeeklyBlockTextLine(
+                text = text,
+                kind = kind,
+                textSize = textSize,
+                bounds = PdfTextRect(0f, lineTop, measure(text, textSize), lineTop + textSize)
+            )
+        }
+        val requiredHeight = 2f + textLines.size * lineHeight
+        val layout = WeeklyBlockTextLayout(lines, requiredHeight, requiredHeight <= maxHeight)
+        if (layout.fits) return layout
+        smallestLayout = layout
+    }
+    return requireNotNull(smallestLayout)
 }
 
 data class LectureClashGroup(
@@ -161,18 +214,7 @@ fun hourAxisLabelPositions(hourRange: LectureHourRange, top: Float, bottom: Floa
     }
 }
 
-fun weeklyBlockTextMode(
-    textWidth: Float,
-    blockHeight: Float,
-    courseCodeWidth: Float,
-    timeRangeWidth: Float,
-    lineHeight: Float = 8.75f,
-    horizontalGap: Float = 4f
-): WeeklyBlockTextMode = when {
-    blockHeight >= lineHeight * 2f + 2f -> WeeklyBlockTextMode.STACKED
-    courseCodeWidth + horizontalGap + timeRangeWidth <= textWidth -> WeeklyBlockTextMode.INLINE
-    else -> WeeklyBlockTextMode.CODE_ONLY
-}
+fun weeklyBlockNeedsClashDetails(textWidth: Float): Boolean = textWidth < 26f
 
 fun timetableCourseColor(courseCode: String): TimetableCourseColor {
     return timetableCourseColors(listOf(courseCode)).getValue(normalizeCourseCode(courseCode))
