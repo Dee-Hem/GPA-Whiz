@@ -2,6 +2,7 @@ package com.deehem.gpawhiz.ui.viewmodel
 
 import android.app.Application
 import android.content.Context
+import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.deehem.gpawhiz.data.*
@@ -816,7 +817,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             requirements = scholarshipRequirements.value,
             timelineEvents = scholarshipTimelineEvents.value,
             reminders = scholarshipReminders.value,
-            drafts = essayDrafts.value
+            drafts = essayDrafts.value,
+            studySessions = studySessions.value
         )
     }
 
@@ -827,6 +829,11 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 val data = BackupRestoreHelper.parseBackupJson(jsonString)
                 
                 // Nuclear reset tables
+                gpaDao.getStudySessionsDirect().forEach {
+                    AlarmScheduler.cancelLegacyStudyAlarm(context, it.id)
+                    AlarmScheduler.cancelStudyAlarm(context, it)
+                }
+                gpaDao.clearAllStudySessions()
                 gpaDao.clearAllSemesters()
                 if (data.exams != null) {
                     gpaDao.clearAllExams()
@@ -853,6 +860,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 data.exams?.forEach { exam ->
                     gpaDao.insertExam(exam)
                 }
+                gpaDao.insertStudySessions(data.studySessions)
 
                 // Insert scholarships & related entities
                 for (s in data.scholarships) {
@@ -871,10 +879,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                     scholarshipDao.insertDraft(d)
                 }
 
-                // Reschedule all exact timetable alarms
-                launch(Dispatchers.Main) {
-                    AlarmScheduler.rescheduleAll(context, data.timetable)
-                }
+                AlarmScheduler.rescheduleAll(context, data.timetable)
+                AlarmScheduler.rescheduleStudySessionAlarms(context, data.studySessions)
                 _uiMessage.value = "Database backup restored successfully."
             } catch (e: Exception) {
                 _uiMessage.value = "Validation Failed: Corrupted schema! ${e.message}"
@@ -924,27 +930,51 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         date: Long,
         startTime: String,
         durationMinutes: Int,
-        isRecurring: Boolean = false,
-        dayOfWeek: Int? = null,
+        recurrence: String = StudyRecurrence.NONE,
+        repeatWeeks: Int = 12,
+        untilDate: Long? = null,
         reminderEnabled: Boolean = true
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val session = StudySession(
-                courseId = courseId,
-                courseCode = courseCode,
-                date = date,
-                startTime = startTime,
-                durationMinutes = durationMinutes,
-                isRecurring = isRecurring,
-                dayOfWeek = dayOfWeek,
-                reminderEnabled = reminderEnabled
-            )
-            val id = gpaDao.insertStudySession(session)
-            if (reminderEnabled) {
-                launch(Dispatchers.Main) {
-                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), session.copy(id = id.toInt()))
-                }
+            if (recurrence != StudyRecurrence.NONE && recurrence != StudyRecurrence.WEEKLY) {
+                _uiMessage.value = "Select a valid repeat option."
+                return@launch
             }
+            if (recurrence == StudyRecurrence.WEEKLY &&
+                (untilDate?.let { it < date } == true || (untilDate == null && repeatWeeks !in 2..52))
+            ) {
+                _uiMessage.value = "Choose 2 to 52 weeks or a valid end date."
+                return@launch
+            }
+            val seriesId = if (recurrence == StudyRecurrence.WEEKLY) {
+                java.util.UUID.randomUUID().toString()
+            } else null
+            val dates = if (seriesId != null) {
+                generateWeeklyOccurrenceDates(
+                    firstDateMillis = date,
+                    weeks = if (untilDate == null) repeatWeeks else null,
+                    untilDateMillis = untilDate
+                )
+            } else listOf(date)
+            if (recurrence == StudyRecurrence.WEEKLY && dates.size !in 2..52) {
+                _uiMessage.value = "A weekly series must include between 2 and 52 occurrences."
+                return@launch
+            }
+            val sessions = dates.map { occurrenceDate ->
+                StudySession(
+                    courseId = courseId,
+                    courseCode = courseCode,
+                    date = occurrenceDate,
+                    startTime = startTime,
+                    durationMinutes = durationMinutes,
+                    reminderEnabled = reminderEnabled,
+                    seriesId = seriesId,
+                    recurrence = recurrence
+                )
+            }
+            val ids = db.withTransaction { gpaDao.insertStudySessions(sessions) }
+            val insertedSessions = sessions.zip(ids).map { (session, id) -> session.copy(id = id.toInt()) }
+            AlarmScheduler.rescheduleStudySessionAlarms(getApplication(), insertedSessions)
             _uiMessage.value = "Study session for $courseCode scheduled."
         }
     }
@@ -953,22 +983,100 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = session.copy(status = status)
             gpaDao.updateStudySession(updated)
-            if (status != "Upcoming") {
-                launch(Dispatchers.Main) {
-                    AlarmScheduler.cancelStudyAlarm(getApplication(), session)
-                }
-            }
+            refreshStudySessionAlarms(updated)
         }
     }
 
     fun updateStudySession(session: StudySession) {
         viewModelScope.launch(Dispatchers.IO) {
             gpaDao.updateStudySession(session)
-            launch(Dispatchers.Main) {
-                AlarmScheduler.cancelStudyAlarm(getApplication(), session)
-                if (session.reminderEnabled && session.status == "Upcoming") {
-                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), session)
+            refreshStudySessionAlarms(session)
+            _uiMessage.value = "Study session updated."
+        }
+    }
+
+    fun editStudySession(
+        session: StudySession,
+        scope: StudySeriesScope,
+        recurrence: String,
+        repeatWeeks: Int,
+        untilDate: Long?
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (recurrence != StudyRecurrence.NONE && recurrence != StudyRecurrence.WEEKLY) {
+                _uiMessage.value = "Select a valid repeat option."
+                return@launch
+            }
+            if (recurrence == StudyRecurrence.WEEKLY &&
+                (untilDate?.let { it < session.date } == true || (untilDate == null && repeatWeeks !in 1..52))
+            ) {
+                _uiMessage.value = "Choose a valid weekly repeat length or end date."
+                return@launch
+            }
+            val edited = session.copy(recurrence = recurrence, isRecurring = false, dayOfWeek = null)
+            if (session.seriesId == null && recurrence == StudyRecurrence.WEEKLY) {
+                val dates = generateWeeklyOccurrenceDates(
+                    session.date,
+                    weeks = if (untilDate == null) repeatWeeks else null,
+                    untilDateMillis = untilDate
+                )
+                if (dates.size !in 2..52) {
+                    _uiMessage.value = "A weekly series must include between 2 and 52 occurrences."
+                    return@launch
                 }
+                val seriesId = java.util.UUID.randomUUID().toString()
+                val seriesSessions = dates.mapIndexed { index, date ->
+                    edited.copy(
+                        id = if (index == 0) session.id else 0,
+                        date = date,
+                        status = if (index == 0) session.status else StudyStatus.UPCOMING,
+                        seriesId = seriesId,
+                        recurrence = StudyRecurrence.WEEKLY
+                    )
+                }
+                val newRows = seriesSessions.drop(1)
+                db.withTransaction {
+                    gpaDao.updateStudySession(seriesSessions.first())
+                    if (newRows.isNotEmpty()) gpaDao.insertStudySessions(newRows)
+                }
+                refreshStudySessionAlarms(seriesSessions.first())
+                _uiMessage.value = "Study session updated."
+                return@launch
+            }
+
+            val previousSeriesId = session.seriesId
+            val existing = getStudySessionGroup(session)
+            val plannedDates = if (recurrence == StudyRecurrence.WEEKLY && scope != StudySeriesScope.THIS_ONLY) {
+                generateWeeklyOccurrenceDates(
+                    session.date,
+                    weeks = if (untilDate == null) repeatWeeks else null,
+                    untilDateMillis = untilDate
+                )
+            } else null
+            if (plannedDates != null && plannedDates.isEmpty()) {
+                _uiMessage.value = "The repeat end date must include at least one occurrence."
+                return@launch
+            }
+            val plan = planStudySeriesEdit(existing, edited, scope, plannedDates)
+            db.withTransaction {
+                if (plan.updatedSessions.isNotEmpty()) gpaDao.updateStudySessions(plan.updatedSessions)
+                if (plan.deletedSessions.isNotEmpty()) gpaDao.deleteStudySessions(plan.deletedSessions)
+                if (plan.insertedSessions.isNotEmpty()) gpaDao.insertStudySessions(plan.insertedSessions)
+            }
+            existing.forEach { oldSession ->
+                AlarmScheduler.cancelLegacyStudyAlarm(getApplication(), oldSession.id)
+                AlarmScheduler.cancelStudyAlarm(getApplication(), oldSession)
+            }
+            plan.deletedSessions.forEach { AlarmScheduler.cancelStudyAlarm(getApplication(), it) }
+            if (previousSeriesId != null && recurrence == StudyRecurrence.NONE) {
+                val remainingPreviousSeries = gpaDao.getStudySessionsBySeriesId(previousSeriesId)
+                AlarmScheduler.rescheduleStudySessionAlarms(getApplication(), remainingPreviousSeries)
+            }
+            if (recurrence == StudyRecurrence.NONE) {
+                AlarmScheduler.rescheduleStudySessionAlarms(getApplication(), plan.updatedSessions)
+            } else {
+                val latestEditedSession = gpaDao.getStudySessionById(session.id) ?: plan.updatedSessions.firstOrNull()
+                if (latestEditedSession != null) refreshStudySessionAlarms(latestEditedSession)
             }
             _uiMessage.value = "Study session updated."
         }
@@ -978,24 +1086,36 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = session.copy(reminderEnabled = !session.reminderEnabled)
             gpaDao.updateStudySession(updated)
-            launch(Dispatchers.Main) {
-                if (updated.reminderEnabled && updated.status == "Upcoming") {
-                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), updated)
-                } else {
-                    AlarmScheduler.cancelStudyAlarm(getApplication(), updated)
-                }
-            }
+            refreshStudySessionAlarms(updated)
         }
     }
 
-    fun deleteStudySession(session: StudySession) {
+    fun deleteStudySession(session: StudySession, scope: StudySeriesScope = StudySeriesScope.THIS_ONLY) {
         viewModelScope.launch(Dispatchers.IO) {
-            gpaDao.deleteStudySession(session)
-            launch(Dispatchers.Main) {
-                AlarmScheduler.cancelStudyAlarm(getApplication(), session)
+            val existing = getStudySessionGroup(session)
+            val deleted = sessionsToDeleteForScope(existing, session, scope)
+            db.withTransaction { gpaDao.deleteStudySessions(deleted) }
+            deleted.forEach {
+                AlarmScheduler.cancelLegacyStudyAlarm(getApplication(), it.id)
+                AlarmScheduler.cancelStudyAlarm(getApplication(), it)
             }
+            refreshStudySessionAlarms(session, existing - deleted.toSet())
             _uiMessage.value = "Study session removed."
         }
+    }
+
+    private suspend fun getStudySessionGroup(session: StudySession): List<StudySession> =
+        if (session.seriesId != null) {
+            gpaDao.getStudySessionsBySeriesId(session.seriesId)
+        } else {
+            listOfNotNull(gpaDao.getStudySessionById(session.id))
+        }
+
+    private suspend fun refreshStudySessionAlarms(
+        session: StudySession,
+        sessions: List<StudySession>? = null
+    ) {
+        AlarmScheduler.rescheduleStudySessionAlarms(getApplication(), sessions ?: getStudySessionGroup(session))
     }
 
     // EXAMS CRUD

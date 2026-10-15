@@ -82,14 +82,29 @@ interface GpaDao {
     @Query("SELECT * FROM study_sessions ORDER BY date ASC, startTime ASC")
     suspend fun getStudySessionsDirect(): List<StudySession>
 
+    @Query("SELECT * FROM study_sessions WHERE id = :id LIMIT 1")
+    suspend fun getStudySessionById(id: Int): StudySession?
+
+    @Query("SELECT * FROM study_sessions WHERE series_id = :seriesId ORDER BY date ASC, startTime ASC")
+    suspend fun getStudySessionsBySeriesId(seriesId: String): List<StudySession>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStudySession(session: StudySession): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertStudySessions(sessions: List<StudySession>): List<Long>
 
     @Update
     suspend fun updateStudySession(session: StudySession)
 
+    @Update
+    suspend fun updateStudySessions(sessions: List<StudySession>)
+
     @Delete
     suspend fun deleteStudySession(session: StudySession)
+
+    @Delete
+    suspend fun deleteStudySessions(sessions: List<StudySession>)
 
     @Query("DELETE FROM study_sessions")
     suspend fun clearAllStudySessions()

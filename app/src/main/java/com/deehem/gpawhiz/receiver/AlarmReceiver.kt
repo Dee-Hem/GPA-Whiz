@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.deehem.gpawhiz.MainActivity
 import com.deehem.gpawhiz.data.AppDatabase
+import com.deehem.gpawhiz.data.StudyRecurrence
 import com.deehem.gpawhiz.service.AlarmScheduler
 import com.deehem.gpawhiz.service.formatStoredTime
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,23 @@ class AlarmReceiver : BroadcastReceiver() {
                     try {
                         val slot = AppDatabase.getDatabase(context).gpaDao().getTimetableSlotById(slotId)
                         if (slot != null) AlarmScheduler.scheduleAlarm(context, slot)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
+        } else if (isStudy) {
+            val sessionId = intent.getIntExtra("sessionId", -1)
+            if (sessionId >= 0) {
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val dao = AppDatabase.getDatabase(context).gpaDao()
+                        val session = dao.getStudySessionById(sessionId)
+                        if (session?.recurrence == StudyRecurrence.WEEKLY && session.seriesId != null) {
+                            val seriesSessions = dao.getStudySessionsBySeriesId(session.seriesId)
+                            AlarmScheduler.rescheduleStudySessionAlarms(context, seriesSessions)
+                        }
                     } finally {
                         pendingResult.finish()
                     }

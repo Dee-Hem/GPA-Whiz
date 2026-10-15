@@ -96,81 +96,6 @@ object AlarmScheduler {
         alarmManager.cancel(pendingIntent)
     }
 
-    fun scheduleStudyAlarm(context: Context, session: StudySession) {
-        if (!session.reminderEnabled || session.status != "Upcoming") return
-
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val parts = session.startTime.split(":")
-        val hour = parts.getOrNull(0)?.toIntOrNull() ?: 16
-        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
-
-        val calendar = Calendar.getInstance()
-        if (session.isRecurring && session.dayOfWeek != null) {
-            val targetDay = when (session.dayOfWeek) {
-                1 -> Calendar.MONDAY
-                2 -> Calendar.TUESDAY
-                3 -> Calendar.WEDNESDAY
-                4 -> Calendar.THURSDAY
-                5 -> Calendar.FRIDAY
-                6 -> Calendar.SATURDAY
-                else -> Calendar.SUNDAY
-            }
-            calendar.set(Calendar.DAY_OF_WEEK, targetDay)
-        } else {
-            calendar.timeInMillis = session.date
-        }
-        
-        // Normalize date part first
-        calendar.set(Calendar.HOUR_OF_DAY, 0)
-        calendar.set(Calendar.MINUTE, 0)
-        calendar.set(Calendar.SECOND, 0)
-        calendar.set(Calendar.MILLISECOND, 0)
-
-        calendar.set(Calendar.HOUR_OF_DAY, hour)
-        calendar.set(Calendar.MINUTE, minute)
-        
-        // Reminder 15 minutes before study begins
-        calendar.add(Calendar.MINUTE, -15)
-
-        if (calendar.timeInMillis <= System.currentTimeMillis()) {
-            if (session.isRecurring) {
-                calendar.add(Calendar.DAY_OF_YEAR, 7)
-            } else {
-                return // Past session, don't schedule
-            }
-        }
-
-        val intent = Intent(context, AlarmReceiver::class.java).apply {
-            action = ACTION_STUDY_ALARM
-            putExtra("isStudySession", true)
-            putExtra("courseCode", session.courseCode)
-            putExtra("startTime", session.startTime)
-            putExtra("duration", session.durationMinutes)
-            putExtra("sessionId", session.id)
-        }
-
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            alarmRequestCode(AppAlarmType.STUDY, session.id),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                if (alarmManager.canScheduleExactAlarms()) {
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
-                } else {
-                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
-                }
-            } else {
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
-            }
-        } catch (e: Exception) {
-            alarmManager.set(AlarmManager.RTC_WAKEUP, calendar.timeInMillis, pendingIntent)
-        }
-    }
-
     fun scheduleOneShotStudyAlarm(context: Context, session: StudySession, nowMillis: Long = System.currentTimeMillis()) {
         if (!session.reminderEnabled || session.status != "Upcoming") return
         val fireAt = oneShotReminderTimeMillis(session.date, session.startTime, 15, nowMillis) ?: return
@@ -212,6 +137,20 @@ object AlarmScheduler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         alarmManager.cancel(pendingIntent)
+    }
+
+    fun rescheduleStudySessionAlarms(
+        context: Context,
+        sessions: List<StudySession>,
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
+        sessions.forEach { session ->
+            cancelLegacyStudyAlarm(context, session.id)
+            cancelStudyAlarm(context, session)
+        }
+        nextStudySessionsToArm(sessions, nowMillis).forEach { session ->
+            scheduleOneShotStudyAlarm(context, session, nowMillis)
+        }
     }
 
     fun rescheduleAll(context: Context, slots: List<TimetableSlot>) {

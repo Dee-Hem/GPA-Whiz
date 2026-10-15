@@ -28,9 +28,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.deehem.gpawhiz.data.Exam
+import com.deehem.gpawhiz.data.StudyRecurrence
 import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.StudyStatus
 import com.deehem.gpawhiz.data.TimetableSlot
+import com.deehem.gpawhiz.service.StudySeriesScope
+import com.deehem.gpawhiz.service.generateWeeklyOccurrenceDates
 import com.deehem.gpawhiz.service.formatExamDuration
 import com.deehem.gpawhiz.service.formatExamTimeRange
 import com.deehem.gpawhiz.service.formatStoredTime
@@ -260,6 +263,31 @@ fun StudyPlannerTab(
     var showAddDialog by remember { mutableStateOf(false) }
     var showTimerForSession by remember { mutableStateOf<StudySession?>(null) }
     var filterCompleted by remember { mutableStateOf(false) }
+    var sessionToEdit by remember { mutableStateOf<StudySession?>(null) }
+    var editScope by remember { mutableStateOf(StudySeriesScope.THIS_ONLY) }
+    var scopeSession by remember { mutableStateOf<StudySession?>(null) }
+    var scopeAction by remember { mutableStateOf<String?>(null) }
+    var deleteConfirmSession by remember { mutableStateOf<StudySession?>(null) }
+    var deleteScope by remember { mutableStateOf(StudySeriesScope.THIS_ONLY) }
+
+    fun requestEdit(session: StudySession) {
+        if (session.seriesId != null && session.recurrence == StudyRecurrence.WEEKLY) {
+            scopeSession = session
+            scopeAction = "edit"
+        } else {
+            sessionToEdit = session
+            editScope = StudySeriesScope.THIS_ONLY
+        }
+    }
+
+    fun requestDelete(session: StudySession) {
+        if (session.seriesId != null && session.recurrence == StudyRecurrence.WEEKLY) {
+            scopeSession = session
+            scopeAction = "delete"
+        } else {
+            onDeleteSession(session)
+        }
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
@@ -362,9 +390,10 @@ fun StudyPlannerTab(
                                     session = session,
                                     onStart = { showTimerForSession = it },
                                     onOpenPomodoro = onOpenPomodoro,
+                                    onEdit = ::requestEdit,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
-                                    onDelete = { onDeleteSession(it) }
+                                    onDelete = ::requestDelete
                                 )
                             }
                         }
@@ -376,9 +405,10 @@ fun StudyPlannerTab(
                                     session = session,
                                     onStart = { showTimerForSession = it },
                                     onOpenPomodoro = onOpenPomodoro,
+                                    onEdit = ::requestEdit,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
-                                    onDelete = { onDeleteSession(it) }
+                                    onDelete = ::requestDelete
                                 )
                             }
                         }
@@ -390,9 +420,10 @@ fun StudyPlannerTab(
                                     session = session,
                                     onStart = { showTimerForSession = it },
                                     onOpenPomodoro = onOpenPomodoro,
+                                    onEdit = ::requestEdit,
                                     onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                     onToggleAlarm = { viewModel.toggleStudySessionAlert(it) },
-                                    onDelete = { onDeleteSession(it) }
+                                    onDelete = ::requestDelete
                                 )
                             }
                         }
@@ -403,9 +434,10 @@ fun StudyPlannerTab(
                                 isHistory = true,
                                 onStart = { },
                                 onOpenPomodoro = { },
+                                onEdit = ::requestEdit,
                                 onStatusChange = { s, status -> viewModel.updateStudySessionStatus(s, status) },
                                 onToggleAlarm = { },
-                                onDelete = { onDeleteSession(it) }
+                                onDelete = ::requestDelete
                             )
                         }
                     }
@@ -418,10 +450,89 @@ fun StudyPlannerTab(
         AddStudySessionDialog(
             courses = currentSemesterCourses,
             onDismiss = { showAddDialog = false },
-            onConfirm = { courseId, code, date, time, duration, recurring, dow ->
-                viewModel.addStudySession(courseId, code, date, time, duration, recurring, dow)
+            onConfirm = { courseId, code, date, time, duration, recurrence, weeks, untilDate ->
+                viewModel.addStudySession(
+                    courseId = courseId,
+                    courseCode = code,
+                    date = date,
+                    startTime = time,
+                    durationMinutes = duration,
+                    recurrence = recurrence,
+                    repeatWeeks = weeks,
+                    untilDate = untilDate
+                )
                 showAddDialog = false
             }
+        )
+    }
+
+    val actionSession = scopeSession
+    val action = scopeAction
+    if (actionSession != null && action != null) {
+        StudySeriesScopeDialog(
+            action = action,
+            onDismiss = { scopeSession = null; scopeAction = null },
+            onChoose = { scope ->
+                when (action) {
+                    "edit" -> {
+                        sessionToEdit = actionSession
+                        editScope = scope
+                    }
+                    "delete" -> {
+                        deleteConfirmSession = actionSession
+                        deleteScope = scope
+                    }
+                }
+                scopeSession = null
+                scopeAction = null
+            }
+        )
+    }
+
+    sessionToEdit?.let { editing ->
+        val matchingSeries = editing.seriesId?.let { seriesId ->
+            sessions.filter { it.seriesId == seriesId }.sortedWith(compareBy<StudySession> { it.date }.thenBy { it.startTime })
+        }.orEmpty()
+        val occurrenceCount = when (editScope) {
+            StudySeriesScope.THIS_ONLY -> 1
+            StudySeriesScope.THIS_AND_FOLLOWING -> {
+                val selectedIndex = matchingSeries.indexOfFirst { it.id == editing.id }
+                matchingSeries.drop(selectedIndex.coerceAtLeast(0)).size
+            }
+            StudySeriesScope.ALL -> matchingSeries.size
+        }.coerceIn(1, 52)
+        EditStudySessionDialog(
+            session = editing,
+            courses = currentSemesterCourses,
+            initialRepeatWeeks = if (matchingSeries.isEmpty()) 12 else occurrenceCount,
+            onDismiss = { sessionToEdit = null },
+            onConfirm = { updated, recurrence, weeks, untilDate ->
+                viewModel.editStudySession(updated, editScope, recurrence, weeks, untilDate)
+                sessionToEdit = null
+            }
+        )
+    }
+
+    deleteConfirmSession?.let { deleting ->
+        val scopeName = when (deleteScope) {
+            StudySeriesScope.THIS_ONLY -> "this session only"
+            StudySeriesScope.THIS_AND_FOLLOWING -> "this and following sessions"
+            StudySeriesScope.ALL -> "all sessions in the series"
+        }
+        AlertDialog(
+            onDismissRequest = { deleteConfirmSession = null },
+            title = { Text("Delete study sessions?") },
+            text = { Text("Delete $scopeName for ${deleting.courseCode}? This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteStudySession(deleting, deleteScope)
+                        deleteConfirmSession = null
+                    },
+                    modifier = Modifier.testTag("confirm_delete_study_series")
+                ) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleteConfirmSession = null }) { Text("Cancel") } }
         )
     }
 
@@ -1084,6 +1195,7 @@ fun StudySessionCard(
     isHistory: Boolean = false,
     onStart: (StudySession) -> Unit,
     onOpenPomodoro: (StudySession) -> Unit = {},
+    onEdit: (StudySession) -> Unit,
     onStatusChange: (StudySession, String) -> Unit,
     onToggleAlarm: (StudySession) -> Unit,
     onDelete: (StudySession) -> Unit
@@ -1100,7 +1212,18 @@ fun StudySessionCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = session.courseCode, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(text = session.courseCode, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                        if (session.seriesId != null && session.recurrence == StudyRecurrence.WEEKLY) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Repeat,
+                                contentDescription = "Weekly recurring session",
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(18.dp).testTag("weekly_repeat_icon_${session.id}")
+                            )
+                        }
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(modifier = Modifier.width(4.dp))
@@ -1114,6 +1237,12 @@ fun StudySessionCard(
                 }
                 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { onEdit(session) },
+                        modifier = Modifier.size(48.dp).testTag("edit_session_button_${session.id}")
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit study session")
+                    }
                     if (!isHistory) {
                         IconButton(onClick = { onToggleAlarm(session) }) {
                             Icon(
@@ -1172,16 +1301,24 @@ fun StudySessionCard(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedButton(
                             onClick = { onStatusChange(session, StudyStatus.POSTPONED) },
-                            modifier = Modifier.height(36.dp),
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("postpone_session_button_${session.id}"),
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text("Postpone", fontSize = 11.sp, maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { onStatusChange(session, StudyStatus.CANCELLED) },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("cancel_session_button_${session.id}"),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text("Cancel", fontSize = 11.sp, maxLines = 1)
                         }
 
                         IconButton(
@@ -1227,7 +1364,11 @@ fun StatusBadge(status: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismiss: () -> Unit, onConfirm: (Int, String, Long, String, Int, Boolean, Int?) -> Unit) {
+fun AddStudySessionDialog(
+    courses: List<com.deehem.gpawhiz.data.Course>,
+    onDismiss: () -> Unit,
+    onConfirm: (Int, String, Long, String, Int, String, Int, Long?) -> Unit
+) {
     val context = LocalContext.current
     var selectedCourseIndex by remember { mutableStateOf(0) }
     val todayMidnight = remember {
@@ -1249,18 +1390,36 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
     var selectedTime by remember { mutableStateOf(defaultTime) }
     var durationMinutes by remember { mutableStateOf("60") }
     var expandedCourse by remember { mutableStateOf(false) }
+    var recurrence by remember { mutableStateOf(StudyRecurrence.NONE) }
+    var repeatWeeks by remember { mutableStateOf(12) }
+    var repeatUntilDate by remember { mutableStateOf(false) }
+    var untilDate by remember { mutableStateOf<Long?>(null) }
     val dateFormat = SimpleDateFormat("EEE, MMM dd, yyyy", Locale.getDefault())
+    val weekdayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
+    val shortDateFormat = SimpleDateFormat("d MMM", Locale.getDefault())
+
+    fun defaultEndDate(startDate: Long = selectedDate): Long =
+        generateWeeklyOccurrenceDates(startDate, weeks = repeatWeeks).lastOrNull() ?: startDate
 
     val isPastTime = remember(selectedDate, selectedTime) {
         val targetTs = getFullTimestamp(selectedDate, selectedTime)
         targetTs < System.currentTimeMillis()
     }
+    val weeklyDates = if (repeatUntilDate) {
+        generateWeeklyOccurrenceDates(selectedDate, untilDateMillis = untilDate ?: defaultEndDate())
+    } else {
+        generateWeeklyOccurrenceDates(selectedDate, weeks = repeatWeeks)
+    }
+    val seriesEndDate = weeklyDates.lastOrNull() ?: selectedDate
 
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Schedule Study") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            modifier = Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
             if (courses.isEmpty()) { Text("No courses found. Add courses first.", color = MaterialTheme.colorScheme.error) } else {
                 Box(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = { expandedCourse = true }, modifier = Modifier.fillMaxWidth()) { Text("Course: ${courses[selectedCourseIndex].code}") }
+                    OutlinedButton(onClick = { expandedCourse = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("study_course_picker")) { Text("Course: ${courses[selectedCourseIndex].code}") }
                     DropdownMenu(expanded = expandedCourse, onDismissRequest = { expandedCourse = false }) {
                         courses.forEachIndexed { index, course -> DropdownMenuItem(text = { Text("${course.code}: ${course.title}") }, onClick = { selectedCourseIndex = index; expandedCourse = false }) }
                     }
@@ -1272,14 +1431,115 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
                             set(y, m, d, 0, 0, 0)
                             set(Calendar.MILLISECOND, 0)
                         }
-                        selectedDate = newCal.timeInMillis 
+                        selectedDate = newCal.timeInMillis
+                        if (repeatUntilDate) untilDate = defaultEndDate(newCal.timeInMillis)
                     }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
-                }, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.DateRange, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = dateFormat.format(Date(selectedDate))) } }
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("study_date_picker")) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.DateRange, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = dateFormat.format(Date(selectedDate))) } }
                 OutlinedCard(onClick = {
                     val parts = selectedTime.split(":")
                     TimePickerDialog(context, { _, h, m -> selectedTime = String.format("%02d:%02d", h, m) }, parts[0].toInt(), parts[1].toInt(), false).show()
-                }, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Start Time: ${formatStoredTime(selectedTime)}") } }
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("study_time_picker")) { Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Notifications, contentDescription = null); Spacer(modifier = Modifier.width(8.dp)); Text(text = "Start Time: ${formatStoredTime(selectedTime)}") } }
                 OutlinedTextField(value = durationMinutes, onValueChange = { durationMinutes = it.filter { c -> c.isDigit() } }, label = { Text("Duration (mins)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                Text("Repeat", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                listOf(
+                    StudyRecurrence.NONE to "Just this day",
+                    StudyRecurrence.WEEKLY to "Every week"
+                ).forEach { (value, label) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                            recurrence = value
+                            if (value == StudyRecurrence.WEEKLY && repeatUntilDate && untilDate == null) {
+                                untilDate = defaultEndDate()
+                            }
+                        }.testTag("study_repeat_${value.lowercase()}"),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = recurrence == value,
+                            onClick = {
+                                recurrence = value
+                                if (value == StudyRecurrence.WEEKLY && repeatUntilDate && untilDate == null) {
+                                    untilDate = defaultEndDate()
+                                }
+                            }
+                        )
+                        Text(label)
+                    }
+                }
+                if (recurrence == StudyRecurrence.WEEKLY) {
+                    if (repeatUntilDate) {
+                        val initialUntilDate = untilDate ?: defaultEndDate()
+                        OutlinedCard(
+                            onClick = {
+                                val cal = Calendar.getInstance().apply { timeInMillis = initialUntilDate }
+                                DatePickerDialog(context, { _, year, month, day ->
+                                    untilDate = Calendar.getInstance().apply {
+                                        set(year, month, day, 0, 0, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
+                                    datePicker.minDate = generateWeeklyOccurrenceDates(selectedDate, weeks = 2).getOrNull(1) ?: selectedDate
+                                    datePicker.maxDate = generateWeeklyOccurrenceDates(selectedDate, weeks = 52).lastOrNull() ?: selectedDate
+                                }.show()
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("repeat_until_date_picker")
+                        ) {
+                            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DateRange, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Until ${dateFormat.format(Date(initialUntilDate))}")
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("For how many weeks")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { repeatWeeks = (repeatWeeks - 1).coerceAtLeast(2) },
+                                    modifier = Modifier.size(48.dp).testTag("repeat_weeks_decrement")
+                                ) { Icon(Icons.Default.Remove, contentDescription = "Fewer weeks") }
+                                Text("$repeatWeeks", modifier = Modifier.testTag("repeat_weeks_value"))
+                                IconButton(
+                                    onClick = { repeatWeeks = (repeatWeeks + 1).coerceAtMost(52) },
+                                    modifier = Modifier.size(48.dp).testTag("repeat_weeks_increment")
+                                ) { Icon(Icons.Default.Add, contentDescription = "More weeks") }
+                            }
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                            val enableUntilDate = !repeatUntilDate
+                            repeatUntilDate = enableUntilDate
+                            untilDate = if (enableUntilDate) defaultEndDate() else null
+                        }.testTag("repeat_until_date_toggle"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Or until a date")
+                        Switch(
+                            checked = repeatUntilDate,
+                            onCheckedChange = { enabled ->
+                                repeatUntilDate = enabled
+                                untilDate = if (enabled) defaultEndDate() else null
+                            }
+                        )
+                    }
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("weekly_series_summary")
+                    ) {
+                        Text(
+                            text = "Every ${weekdayFormat.format(Date(selectedDate))}, ${weeklyDates.size} sessions, ${shortDateFormat.format(Date(selectedDate))} to ${shortDateFormat.format(Date(seriesEndDate))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
                 if (isPastTime) {
                     Surface(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
@@ -1295,7 +1555,297 @@ fun AddStudySessionDialog(courses: List<com.deehem.gpawhiz.data.Course>, onDismi
                 }
             }
         }
-    }, confirmButton = { Button(onClick = { if (courses.isNotEmpty()) { val course = courses[selectedCourseIndex]; onConfirm(course.id, course.code, selectedDate, selectedTime, durationMinutes.toIntOrNull() ?: 60, false, null) } }, enabled = courses.isNotEmpty() && durationMinutes.isNotEmpty()) { Text("Schedule") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+    }, confirmButton = {
+        Button(
+            onClick = {
+                if (courses.isNotEmpty()) {
+                    val course = courses[selectedCourseIndex]
+                    onConfirm(
+                        course.id,
+                        course.code,
+                        selectedDate,
+                        selectedTime,
+                        durationMinutes.toIntOrNull() ?: 60,
+                        recurrence,
+                        repeatWeeks,
+                        if (recurrence == StudyRecurrence.WEEKLY && repeatUntilDate) untilDate ?: defaultEndDate() else null
+                    )
+                }
+            },
+            enabled = courses.isNotEmpty() && durationMinutes.isNotEmpty()
+        ) { Text("Schedule") }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+}
+
+@Composable
+fun StudySeriesScopeDialog(
+    action: String,
+    onDismiss: () -> Unit,
+    onChoose: (StudySeriesScope) -> Unit
+) {
+    val actionLabel = if (action == "delete") "Delete" else "Edit"
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("$actionLabel recurring sessions") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Choose which sessions to ${actionLabel.lowercase()}.")
+                listOf(
+                    StudySeriesScope.THIS_ONLY to "This session only",
+                    StudySeriesScope.THIS_AND_FOLLOWING to "This and following sessions",
+                    StudySeriesScope.ALL to "All sessions in the series"
+                ).forEach { (scope, label) ->
+                    TextButton(
+                        onClick = { onChoose(scope) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag(
+                            "series_scope_${scope.name.lowercase()}"
+                        )
+                    ) { Text(label, modifier = Modifier.fillMaxWidth()) }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditStudySessionDialog(
+    session: StudySession,
+    courses: List<com.deehem.gpawhiz.data.Course>,
+    initialRepeatWeeks: Int = 12,
+    onDismiss: () -> Unit,
+    onConfirm: (StudySession, String, Int, Long?) -> Unit
+) {
+    val context = LocalContext.current
+    var selectedCourseIndex by remember(session.id, courses) {
+        mutableIntStateOf(courses.indexOfFirst { it.id == session.courseId }.coerceAtLeast(0))
+    }
+    var selectedDate by remember(session.id) { mutableLongStateOf(session.date) }
+    var selectedTime by remember(session.id) { mutableStateOf(session.startTime) }
+    var durationMinutes by remember(session.id) { mutableStateOf(session.durationMinutes.toString()) }
+    var reminderEnabled by remember(session.id) { mutableStateOf(session.reminderEnabled) }
+    var recurrence by remember(session.id) { mutableStateOf(session.recurrence) }
+    var repeatWeeks by remember(session.id, initialRepeatWeeks) { mutableIntStateOf(initialRepeatWeeks) }
+    var repeatUntilDate by remember(session.id) { mutableStateOf(false) }
+    var untilDate by remember(session.id) {
+        mutableStateOf(generateWeeklyOccurrenceDates(session.date, weeks = initialRepeatWeeks.coerceIn(1, 52)).lastOrNull() ?: session.date)
+    }
+    var expandedCourse by remember { mutableStateOf(false) }
+    val dateFormat = SimpleDateFormat("EEE, MMM dd, yyyy", Locale.getDefault())
+    val weekdayFormat = SimpleDateFormat("EEEE", Locale.getDefault())
+    val shortDateFormat = SimpleDateFormat("d MMM", Locale.getDefault())
+
+    fun defaultEndDate(startDate: Long = selectedDate): Long =
+        generateWeeklyOccurrenceDates(startDate, weeks = repeatWeeks).lastOrNull() ?: startDate
+
+    val weeklyDates = if (repeatUntilDate) {
+        generateWeeklyOccurrenceDates(selectedDate, untilDateMillis = untilDate)
+    } else {
+        generateWeeklyOccurrenceDates(selectedDate, weeks = repeatWeeks)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Study Session") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                if (courses.isEmpty()) {
+                    Text("No courses found. Add courses first.", color = MaterialTheme.colorScheme.error)
+                } else {
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { expandedCourse = true },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("edit_study_course_picker")
+                        ) {
+                            Text("Course: ${courses[selectedCourseIndex].code}")
+                        }
+                        DropdownMenu(expanded = expandedCourse, onDismissRequest = { expandedCourse = false }) {
+                            courses.forEachIndexed { index, course ->
+                                DropdownMenuItem(
+                                    text = { Text("${course.code}: ${course.title}") },
+                                    onClick = { selectedCourseIndex = index; expandedCourse = false }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedCard(
+                        onClick = {
+                            val cal = Calendar.getInstance().apply { timeInMillis = selectedDate }
+                            DatePickerDialog(context, { _, year, month, day ->
+                                selectedDate = Calendar.getInstance().apply {
+                                    set(year, month, day, 0, 0, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                                if (repeatUntilDate) untilDate = defaultEndDate(selectedDate)
+                            }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("edit_study_date_picker")
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DateRange, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(dateFormat.format(Date(selectedDate)))
+                        }
+                    }
+                    OutlinedCard(
+                        onClick = {
+                            val parts = selectedTime.split(":")
+                            TimePickerDialog(
+                                context,
+                                { _, hour, minute -> selectedTime = String.format("%02d:%02d", hour, minute) },
+                                parts.getOrNull(0)?.toIntOrNull() ?: 9,
+                                parts.getOrNull(1)?.toIntOrNull() ?: 0,
+                                false
+                            ).show()
+                        },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("edit_study_time_picker")
+                    ) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Notifications, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Start Time: ${formatStoredTime(selectedTime)}")
+                        }
+                    }
+                    OutlinedTextField(
+                        value = durationMinutes,
+                        onValueChange = { durationMinutes = it.filter(Char::isDigit) },
+                        label = { Text("Duration (mins)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Text("Repeat", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    listOf(
+                        StudyRecurrence.NONE to "Just this day",
+                        StudyRecurrence.WEEKLY to "Every week"
+                    ).forEach { (value, label) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                                recurrence = value
+                            }.testTag("edit_study_repeat_${value.lowercase()}"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = recurrence == value,
+                                onClick = { recurrence = value }
+                            )
+                            Text(label)
+                        }
+                    }
+                    if (recurrence == StudyRecurrence.WEEKLY) {
+                        if (repeatUntilDate) {
+                            OutlinedCard(
+                                onClick = {
+                                    val cal = Calendar.getInstance().apply { timeInMillis = untilDate }
+                                    DatePickerDialog(context, { _, year, month, day ->
+                                        untilDate = Calendar.getInstance().apply {
+                                            set(year, month, day, 0, 0, 0)
+                                            set(Calendar.MILLISECOND, 0)
+                                        }.timeInMillis
+                                    }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).apply {
+                                        datePicker.minDate = generateWeeklyOccurrenceDates(selectedDate, weeks = 2).getOrNull(1) ?: selectedDate
+                                        datePicker.maxDate = generateWeeklyOccurrenceDates(selectedDate, weeks = 52).lastOrNull() ?: selectedDate
+                                    }.show()
+                                },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("edit_repeat_until_date_picker")
+                            ) {
+                                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.DateRange, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Until ${dateFormat.format(Date(untilDate))}")
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("For how many weeks")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { repeatWeeks = (repeatWeeks - 1).coerceAtLeast(1) },
+                                        modifier = Modifier.size(48.dp).testTag("edit_repeat_weeks_decrement")
+                                    ) { Icon(Icons.Default.Remove, contentDescription = "Fewer weeks") }
+                                    Text("$repeatWeeks", modifier = Modifier.testTag("edit_repeat_weeks_value"))
+                                    IconButton(
+                                        onClick = { repeatWeeks = (repeatWeeks + 1).coerceAtMost(52) },
+                                        modifier = Modifier.size(48.dp).testTag("edit_repeat_weeks_increment")
+                                    ) { Icon(Icons.Default.Add, contentDescription = "More weeks") }
+                                }
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable {
+                                repeatUntilDate = !repeatUntilDate
+                                if (repeatUntilDate) untilDate = defaultEndDate()
+                            }.testTag("edit_repeat_until_date_toggle"),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Or until a date")
+                            Switch(
+                                checked = repeatUntilDate,
+                                onCheckedChange = {
+                                    repeatUntilDate = it
+                                    if (it) untilDate = defaultEndDate()
+                                }
+                            )
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("edit_weekly_series_summary")
+                        ) {
+                            Text(
+                                text = "Every ${weekdayFormat.format(Date(selectedDate))}, ${weeklyDates.size} sessions, ${shortDateFormat.format(Date(selectedDate))} to ${shortDateFormat.format(Date(weeklyDates.lastOrNull() ?: selectedDate))}",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Reminder")
+                        Switch(checked = reminderEnabled, onCheckedChange = { reminderEnabled = it })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (courses.isNotEmpty()) {
+                        val course = courses[selectedCourseIndex]
+                        onConfirm(
+                            session.copy(
+                                courseId = course.id,
+                                courseCode = course.code,
+                                date = selectedDate,
+                                startTime = selectedTime,
+                                durationMinutes = durationMinutes.toIntOrNull() ?: session.durationMinutes,
+                                reminderEnabled = reminderEnabled
+                            ),
+                            recurrence,
+                            repeatWeeks,
+                            if (recurrence == StudyRecurrence.WEEKLY && repeatUntilDate) untilDate else null
+                        )
+                    }
+                },
+                enabled = courses.isNotEmpty() && durationMinutes.isNotEmpty()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

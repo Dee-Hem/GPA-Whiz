@@ -4,10 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import com.deehem.gpawhiz.data.AppDatabase
-import com.deehem.gpawhiz.data.StudySession
 import com.deehem.gpawhiz.data.TimetableSlot
 import com.deehem.gpawhiz.service.AlarmScheduler
-import com.deehem.gpawhiz.service.studySessionsEligibleForRecovery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,7 +28,7 @@ object AlarmRecovery {
         val dao = AppDatabase.getDatabase(context).gpaDao()
         rescheduleLectureSlots(context, dao.getTimetableSlotsDirect())
         rescheduleExams(context, dao.getExamsDirect())
-        rescheduleStudySessions(context, dao.getStudySessionsDirect(), nowMillis)
+        AlarmScheduler.rescheduleStudySessionAlarms(context, dao.getStudySessionsDirect(), nowMillis)
     }
 
     private fun rescheduleLectureSlots(context: Context, slots: List<TimetableSlot>) {
@@ -49,17 +47,4 @@ object AlarmRecovery {
         }
     }
 
-    private fun rescheduleStudySessions(
-        context: Context,
-        sessions: List<StudySession>,
-        nowMillis: Long
-    ) {
-        sessions.forEach { session ->
-            AlarmScheduler.cancelLegacyStudyAlarm(context, session.id)
-            AlarmScheduler.cancelStudyAlarm(context, session)
-        }
-        studySessionsEligibleForRecovery(sessions, nowMillis).forEach { session ->
-            AlarmScheduler.scheduleOneShotStudyAlarm(context, session, nowMillis)
-        }
-    }
 }

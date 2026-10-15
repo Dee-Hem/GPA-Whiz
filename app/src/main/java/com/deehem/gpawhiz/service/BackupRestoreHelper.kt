@@ -16,7 +16,8 @@ object BackupRestoreHelper {
         requirements: List<ScholarshipRequirement> = emptyList(),
         timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
         reminders: List<ScholarshipReminder> = emptyList(),
-        drafts: List<EssayDraft> = emptyList()
+        drafts: List<EssayDraft> = emptyList(),
+        studySessions: List<StudySession> = emptyList()
     ): String {
         val root = JSONObject()
         root.put("schemaVersion", 4)
@@ -103,6 +104,25 @@ object BackupRestoreHelper {
             })
         }
         root.put("exams", examsArray)
+
+        val studySessionsArray = JSONArray()
+        for (session in studySessions) {
+            studySessionsArray.put(JSONObject().apply {
+                put("id", session.id)
+                put("courseId", session.courseId)
+                put("courseCode", session.courseCode)
+                put("date", session.date)
+                put("startTime", session.startTime)
+                put("durationMinutes", session.durationMinutes)
+                put("status", session.status)
+                put("isRecurring", session.isRecurring)
+                if (session.dayOfWeek != null) put("dayOfWeek", session.dayOfWeek)
+                put("reminderEnabled", session.reminderEnabled)
+                if (session.seriesId != null) put("series_id", session.seriesId)
+                put("recurrence", session.recurrence)
+            })
+        }
+        root.put("studySessions", studySessionsArray)
 
         // Scholarships list
         val scholarshipsArray = JSONArray()
@@ -306,6 +326,33 @@ object BackupRestoreHelper {
             }
         }
 
+        val studySessionsList = mutableListOf<StudySession>()
+        root.optJSONArray("studySessions")?.let { sessionsArray ->
+            for (i in 0 until sessionsArray.length()) {
+                val item = sessionsArray.getJSONObject(i)
+                studySessionsList.add(
+                    StudySession(
+                        id = item.optInt("id", 0),
+                        courseId = item.optInt("courseId", 0),
+                        courseCode = item.optString("courseCode", ""),
+                        date = item.optLong("date", 0L),
+                        startTime = item.optString("startTime", "09:00"),
+                        durationMinutes = item.optInt("durationMinutes", 60),
+                        status = item.optString("status", StudyStatus.UPCOMING),
+                        isRecurring = item.optBoolean("isRecurring", false),
+                        dayOfWeek = if (item.has("dayOfWeek") && !item.isNull("dayOfWeek")) {
+                            item.optInt("dayOfWeek")
+                        } else null,
+                        reminderEnabled = item.optBoolean("reminderEnabled", true),
+                        seriesId = if (item.has("series_id") && !item.isNull("series_id")) {
+                            item.optString("series_id")
+                        } else null,
+                        recurrence = item.optString("recurrence", StudyRecurrence.NONE)
+                    )
+                )
+            }
+        }
+
         // Parse Scholarships (if present, backward compatible)
         val scholarshipsList = mutableListOf<Scholarship>()
         if (root.has("scholarships")) {
@@ -434,7 +481,8 @@ object BackupRestoreHelper {
             requirements = requirementsList,
             timelineEvents = timelineList,
             reminders = remindersList,
-            drafts = draftsList
+            drafts = draftsList,
+            studySessions = studySessionsList
         )
     }
 }
@@ -449,5 +497,6 @@ data class BackupData(
     val requirements: List<ScholarshipRequirement> = emptyList(),
     val timelineEvents: List<ScholarshipTimelineEvent> = emptyList(),
     val reminders: List<ScholarshipReminder> = emptyList(),
-    val drafts: List<EssayDraft> = emptyList()
+    val drafts: List<EssayDraft> = emptyList(),
+    val studySessions: List<StudySession> = emptyList()
 )

@@ -1,7 +1,6 @@
 package com.deehem.gpawhiz.service
 
 import com.deehem.gpawhiz.data.StudySession
-import com.deehem.gpawhiz.data.StudyStatus
 import java.util.Calendar
 
 enum class AppAlarmType(val requestCodeNamespace: Int) {
@@ -42,10 +41,11 @@ fun oneShotReminderTimeMillis(
     sessionDateMillis: Long,
     startTime: String,
     leadMinutes: Int,
-    nowMillis: Long
+    nowMillis: Long,
+    timeZone: java.util.TimeZone = java.util.TimeZone.getDefault()
 ): Long? {
     val (hour, minute) = parseStoredHourMinute(startTime)
-    val calendar = Calendar.getInstance().apply {
+    val calendar = Calendar.getInstance(timeZone).apply {
         timeInMillis = sessionDateMillis
         set(Calendar.HOUR_OF_DAY, hour)
         set(Calendar.MINUTE, minute)
@@ -59,12 +59,7 @@ fun oneShotReminderTimeMillis(
 fun studySessionsEligibleForRecovery(
     sessions: List<StudySession>,
     nowMillis: Long
-): List<StudySession> =
-    sessions.filter { session ->
-        session.reminderEnabled &&
-            session.status == StudyStatus.UPCOMING &&
-            oneShotReminderTimeMillis(session.date, session.startTime, 15, nowMillis) != null
-    }
+): List<StudySession> = nextStudySessionsToArm(sessions, nowMillis)
 
 private fun parseStoredHourMinute(value: String): Pair<Int, Int> {
     val parts = value.split(':')

@@ -106,8 +106,15 @@ data class StudySession(
     val status: String = "Upcoming",
     val isRecurring: Boolean = false,
     val dayOfWeek: Int? = null, // 1-7 (Mon-Sun)
-    val reminderEnabled: Boolean = true
+    val reminderEnabled: Boolean = true,
+    @ColumnInfo(name = "series_id", defaultValue = "NULL") val seriesId: String? = null,
+    @ColumnInfo(defaultValue = "'NONE'") val recurrence: String = StudyRecurrence.NONE
 )
+
+object StudyRecurrence {
+    const val NONE = "NONE"
+    const val WEEKLY = "WEEKLY"
+}
 
 object StudyStatus {
     const val UPCOMING = "Upcoming"
