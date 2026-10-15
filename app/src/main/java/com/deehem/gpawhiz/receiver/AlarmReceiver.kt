@@ -9,7 +9,12 @@ import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.deehem.gpawhiz.MainActivity
+import com.deehem.gpawhiz.data.AppDatabase
+import com.deehem.gpawhiz.service.AlarmScheduler
 import com.deehem.gpawhiz.service.formatStoredTime
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -19,6 +24,20 @@ class AlarmReceiver : BroadcastReceiver() {
         val time = intent.getStringExtra("startTime")?.let(::formatStoredTime) ?: "Soon"
 
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!isStudy && !isExam) {
+            val slotId = intent.getIntExtra("slotId", -1)
+            if (slotId >= 0) {
+                val pendingResult = goAsync()
+                CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        val slot = AppDatabase.getDatabase(context).gpaDao().getTimetableSlotById(slotId)
+                        if (slot != null) AlarmScheduler.scheduleAlarm(context, slot)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }
+            }
+        }
         val channelId = when {
             isExam -> "exam_alerts"
             isStudy -> "study_alerts"

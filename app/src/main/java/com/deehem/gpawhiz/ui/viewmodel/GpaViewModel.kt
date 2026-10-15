@@ -942,7 +942,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             val id = gpaDao.insertStudySession(session)
             if (reminderEnabled) {
                 launch(Dispatchers.Main) {
-                    AlarmScheduler.scheduleStudyAlarm(getApplication(), session.copy(id = id.toInt()))
+                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), session.copy(id = id.toInt()))
                 }
             }
             _uiMessage.value = "Study session for $courseCode scheduled."
@@ -953,7 +953,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val updated = session.copy(status = status)
             gpaDao.updateStudySession(updated)
-            if (status == "Completed" || status == "Cancelled") {
+            if (status != "Upcoming") {
                 launch(Dispatchers.Main) {
                     AlarmScheduler.cancelStudyAlarm(getApplication(), session)
                 }
@@ -967,7 +967,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             launch(Dispatchers.Main) {
                 AlarmScheduler.cancelStudyAlarm(getApplication(), session)
                 if (session.reminderEnabled && session.status == "Upcoming") {
-                    AlarmScheduler.scheduleStudyAlarm(getApplication(), session)
+                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), session)
                 }
             }
             _uiMessage.value = "Study session updated."
@@ -980,7 +980,7 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
             gpaDao.updateStudySession(updated)
             launch(Dispatchers.Main) {
                 if (updated.reminderEnabled && updated.status == "Upcoming") {
-                    AlarmScheduler.scheduleStudyAlarm(getApplication(), updated)
+                    AlarmScheduler.scheduleOneShotStudyAlarm(getApplication(), updated)
                 } else {
                     AlarmScheduler.cancelStudyAlarm(getApplication(), updated)
                 }

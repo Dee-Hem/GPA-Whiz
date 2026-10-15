@@ -57,6 +57,12 @@ interface GpaDao {
     @Query("SELECT * FROM timetable_slots ORDER BY dayOfWeek ASC, startTime ASC")
     fun getAllTimetableSlots(): Flow<List<TimetableSlot>>
 
+    @Query("SELECT * FROM timetable_slots ORDER BY dayOfWeek ASC, startTime ASC")
+    suspend fun getTimetableSlotsDirect(): List<TimetableSlot>
+
+    @Query("SELECT * FROM timetable_slots WHERE id = :id LIMIT 1")
+    suspend fun getTimetableSlotById(id: Int): TimetableSlot?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTimetableSlot(slot: TimetableSlot): Long
 
@@ -73,6 +79,9 @@ interface GpaDao {
     @Query("SELECT * FROM study_sessions ORDER BY date ASC, startTime ASC")
     fun getAllStudySessions(): Flow<List<StudySession>>
 
+    @Query("SELECT * FROM study_sessions ORDER BY date ASC, startTime ASC")
+    suspend fun getStudySessionsDirect(): List<StudySession>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertStudySession(session: StudySession): Long
 
@@ -88,6 +97,9 @@ interface GpaDao {
     // Exams
     @Query("SELECT * FROM exams ORDER BY date ASC, time ASC")
     fun getAllExams(): Flow<List<Exam>>
+
+    @Query("SELECT * FROM exams ORDER BY date ASC, time ASC")
+    suspend fun getExamsDirect(): List<Exam>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertExam(exam: Exam): Long
