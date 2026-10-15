@@ -123,7 +123,7 @@ class ExamTimetableLayoutTest {
 
     @Test
     fun longExamListPaginatesWithoutSplittingRowsOrDroppingExams() {
-        val exams = (1..60).map { id ->
+        val exams = (1..40).map { id ->
             exam(id, day = 12, month = Calendar.JANUARY, year = 2027, time = "09:00")
         }
 

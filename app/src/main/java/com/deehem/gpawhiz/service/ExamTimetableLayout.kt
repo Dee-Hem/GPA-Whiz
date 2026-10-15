@@ -106,6 +106,7 @@ fun examTimetableRow(exam: Exam, courseTitle: String?): ExamTimetableRow =
 fun paginateExamTimetable(
     exams: List<Exam>,
     clashLines: List<String> = emptyList(),
+    rowHeightFor: ((Exam) -> Float)? = null,
     firstPageContentTop: Float = 204f,
     nextPageContentTop: Float = 184f,
     contentBottom: Float = 790f,
@@ -116,11 +117,12 @@ fun paginateExamTimetable(
     clashHeadingHeight: Float = 18f,
     clashLineHeight: Float = 11f
 ): List<ExamTimetablePage> {
-    if (exams.isEmpty()) {
-        return if (clashLines.isEmpty()) emptyList() else listOf(ExamTimetablePage(emptyList(), clashLines))
-    }
-    require(firstPageContentTop + dateHeaderHeight + tableHeaderHeight + rowHeight <= contentBottom) {
-        "Page body must fit at least one date header, table header, and exam row."
+    if (exams.isEmpty() && clashLines.isEmpty()) return emptyList()
+    val heightFor = rowHeightFor ?: { _: Exam -> rowHeight }
+    if (exams.isNotEmpty()) {
+        require(firstPageContentTop + dateHeaderHeight + tableHeaderHeight + heightFor(exams.first()) <= contentBottom) {
+            "Page body must fit at least one date header, table header, and exam row."
+        }
     }
 
     val pages = mutableListOf<MutableList<ExamPageSection>>()
@@ -138,18 +140,23 @@ fun paginateExamTimetable(
         var isContinuation = false
         while (offset < dateGroup.exams.size) {
             val headingHeight = dateHeaderHeight + tableHeaderHeight
-            if (cursor + headingHeight + rowHeight > contentBottom) startPage()
-            val availableRows = ((contentBottom - cursor - headingHeight) / rowHeight).toInt().coerceAtLeast(1)
-            val rowCount = minOf(availableRows, dateGroup.exams.size - offset)
+            if (cursor + headingHeight + heightFor(dateGroup.exams[offset]) > contentBottom) startPage()
+            val sectionExams = mutableListOf<Exam>()
+            var heightLeft = contentBottom - cursor - headingHeight
+            while (offset < dateGroup.exams.size && heightFor(dateGroup.exams[offset]) <= heightLeft) {
+                sectionExams.add(dateGroup.exams[offset])
+                heightLeft -= heightFor(dateGroup.exams[offset])
+                offset++
+            }
+            require(sectionExams.isNotEmpty()) { "An exam row does not fit on a portrait page." }
             currentPage.add(
                 ExamPageSection(
                     dateMillis = dateGroup.dateMillis,
                     isContinuation = isContinuation,
-                    exams = dateGroup.exams.subList(offset, offset + rowCount)
+                    exams = sectionExams
                 )
             )
-            cursor += headingHeight + rowCount * rowHeight + sectionGap
-            offset += rowCount
+            cursor += headingHeight + sectionExams.sumOf { heightFor(it).toDouble() }.toFloat() + sectionGap
 
             if (offset < dateGroup.exams.size) {
                 startPage()
@@ -159,26 +166,16 @@ fun paginateExamTimetable(
     }
     if (currentPage.isNotEmpty()) pages.add(currentPage)
 
+    val result = pages.map { ExamTimetablePage(it) }.toMutableList()
     if (clashLines.isNotEmpty()) {
-        val clashHeight = clashHeadingHeight + clashLines.size * clashLineHeight
-        val finalPageContentHeight = pages.last().sumOf { section ->
-            (dateHeaderHeight + tableHeaderHeight + section.exams.size * rowHeight + sectionGap).toDouble()
-        }.toFloat()
-        val finalPageTop = if (pages.size == 1) firstPageContentTop else nextPageContentTop
-        if (finalPageTop + finalPageContentHeight + clashHeight <= contentBottom) {
-            return pages.mapIndexed { index, sections ->
-                ExamTimetablePage(sections, if (index == pages.lastIndex) clashLines else emptyList())
-            }
+        val perPage = ((contentBottom - nextPageContentTop - clashHeadingHeight) / clashLineHeight)
+            .toInt()
+            .coerceAtLeast(1)
+        clashLines.chunked(perPage).forEach { lines ->
+            result.add(ExamTimetablePage(emptyList(), lines))
         }
-        pages.add(mutableListOf())
     }
-
-    return pages.mapIndexed { index, sections ->
-        ExamTimetablePage(
-            sections,
-            if (clashLines.isNotEmpty() && index == pages.lastIndex) clashLines else emptyList()
-        )
-    }
+    return result
 }
 
 private fun timedExam(exam: Exam): TimedExam {

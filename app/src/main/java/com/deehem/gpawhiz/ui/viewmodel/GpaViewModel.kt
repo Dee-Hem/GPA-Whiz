@@ -696,7 +696,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 slots = exportSlots,
                 courses = allCourses,
                 layout = layout,
-                outputStream = outputStream
+                outputStream = outputStream,
+                use24HourTime = android.text.format.DateFormat.is24HourFormat(getApplication())
             )
             _uiMessage.value = "Lecture timetable PDF exported."
         } catch (e: Exception) {
@@ -711,7 +712,8 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
                 exams = exams.value,
                 courses = courses.value,
                 upcomingOnly = upcomingOnly,
-                outputStream = outputStream
+                outputStream = outputStream,
+                use24HourTime = android.text.format.DateFormat.is24HourFormat(getApplication())
             )
             _uiMessage.value = "Exam timetable PDF exported."
         } catch (e: Exception) {

@@ -12,15 +12,20 @@ import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import com.deehem.gpawhiz.service.formatExamTimeRange
 
 object ExamTimetablePdfGenerator {
     private const val DATE_HEADER_HEIGHT = 22f
     private const val TABLE_HEADER_HEIGHT = 20f
-    private const val ROW_HEIGHT = 25f
     private const val CONTENT_BOTTOM = 790f
-    private const val FIRST_PAGE_CONTENT_TOP = 204f
-    private const val NEXT_PAGE_CONTENT_TOP = 184f
+
+    private data class ExamPdfRow(
+        val exam: Exam,
+        val courseTitle: String,
+        val courseCode: String,
+        val venue: String,
+        val seatNumber: String,
+        val wrapped: PdfWrappedRow
+    )
 
     fun generate(
         student: StudentProfile,
@@ -28,29 +33,45 @@ object ExamTimetablePdfGenerator {
         courses: List<Course>,
         upcomingOnly: Boolean,
         outputStream: OutputStream,
-        nowMillis: Long = System.currentTimeMillis()
+        nowMillis: Long = System.currentTimeMillis(),
+        use24HourTime: Boolean = false
     ) {
         val sortedExams = filterAndSortExams(exams, upcomingOnly, nowMillis)
         val dateGroups = groupExamsByDate(sortedExams)
         val clashes = findExamClashes(sortedExams)
         val clashPaint = LectureTimetablePdfStyle.paint(7.5f, LectureTimetablePdfStyle.textGrey)
-        val clashLines = clashes.flatMap { wrapLine(
-            formatClash(it),
-            clashPaint,
-            LectureTimetablePdfStyle.PAGE_WIDTH - 2 * LectureTimetablePdfStyle.MARGIN
-        ) }
+        val clashLines = clashes.flatMap {
+            wrapPdfText(formatClash(it), LectureTimetablePdfStyle.PAGE_WIDTH - 2 * LectureTimetablePdfStyle.MARGIN, 7.5f) { text, size ->
+                LectureTimetablePdfStyle.measureText(clashPaint, text, size)
+            }
+        }
+        val courseById = courses.associateBy { it.id }
+        val clashExamIds = clashes.flatMap { it.exams }.map { it.id }.toSet()
+        val rowById = sortedExams.associate { exam ->
+            exam.id to createExamPdfRow(exam, courseById[exam.courseId], exam.id in clashExamIds)
+        }
+        val summary = examSummaryText(
+            sortedExams.size,
+            dateGroups.firstOrNull()?.dateMillis?.let { formatPdfShortDate(Date(it)) },
+            dateGroups.lastOrNull()?.dateMillis?.let { formatPdfShortDate(Date(it)) }
+        )
+        val bodyTop = LectureTimetablePdfStyle.measureHeaderBottom(
+            student,
+            LectureTimetablePdfStyle.PAGE_WIDTH,
+            summary
+        ) + 8f
         val pages = paginateExamTimetable(
             exams = sortedExams,
             clashLines = clashLines,
-            firstPageContentTop = FIRST_PAGE_CONTENT_TOP,
-            nextPageContentTop = NEXT_PAGE_CONTENT_TOP,
+            rowHeightFor = { exam -> rowById.getValue(exam.id).wrapped.height },
+            firstPageContentTop = bodyTop,
+            nextPageContentTop = bodyTop,
             contentBottom = CONTENT_BOTTOM,
             dateHeaderHeight = DATE_HEADER_HEIGHT,
             tableHeaderHeight = TABLE_HEADER_HEIGHT,
-            rowHeight = ROW_HEIGHT
+            clashHeadingHeight = 35f,
+            clashLineHeight = 11f
         ).ifEmpty { listOf(ExamTimetablePage(emptyList())) }
-        val courseById = courses.associateBy { it.id }
-        val clashExamIds = clashes.flatMap { it.exams }.map { it.id }.toSet()
         val pdfDocument = PdfDocument()
         val generatedAt = Date(nowMillis)
 
@@ -69,14 +90,10 @@ object ExamTimetablePdfGenerator {
                     student = student,
                     semesterOrSession = student.academicSession.ifBlank { "EXAM SCHEDULE" },
                     title = "EXAMINATION TIMETABLE",
-                    pageWidth = LectureTimetablePdfStyle.PAGE_WIDTH
+                    pageWidth = LectureTimetablePdfStyle.PAGE_WIDTH,
+                    summary = summary
                 )
-                if (pageIndex == 0) {
-                    drawSummary(canvas, sortedExams, dateGroups.map { it.dateMillis }, y)
-                    y = FIRST_PAGE_CONTENT_TOP
-                } else {
-                    y = NEXT_PAGE_CONTENT_TOP
-                }
+                y += 8f
 
                 for (section in pageModel.sections) {
                     drawDateHeader(canvas, section.dateMillis, section.isContinuation, y)
@@ -85,17 +102,15 @@ object ExamTimetablePdfGenerator {
                     y += TABLE_HEADER_HEIGHT
 
                     for (exam in section.exams) {
-                        val linkedCourse = courseById[exam.courseId]
-                        val row = examTimetableRow(exam, linkedCourse?.title)
+                        val row = rowById.getValue(exam.id)
                         drawExamRow(
                             canvas = canvas,
                             row = row,
-                            courseCode = exam.courseCode.ifBlank { linkedCourse?.code.orEmpty() }.ifBlank { "-" },
                             top = y,
                             isPast = isExamPast(exam, nowMillis),
                             hasClash = exam.id in clashExamIds
                         )
-                        y += ROW_HEIGHT
+                        y += row.wrapped.height
                     }
                     y += 8f
                 }
@@ -117,7 +132,8 @@ object ExamTimetablePdfGenerator {
                     pages.size,
                     LectureTimetablePdfStyle.PAGE_WIDTH,
                     LectureTimetablePdfStyle.PAGE_HEIGHT,
-                    generatedAt
+                    generatedAt,
+                    use24HourTime
                 )
                 pdfDocument.finishPage(page)
             }
@@ -125,30 +141,6 @@ object ExamTimetablePdfGenerator {
         } finally {
             pdfDocument.close()
         }
-    }
-
-    private fun drawSummary(
-        canvas: Canvas,
-        exams: List<Exam>,
-        sortedDates: List<Long>,
-        headerBottom: Float
-    ) {
-        val dateFormat = dateFormatter()
-        val summary = "Exams: ${exams.size}    First: ${
-            sortedDates.firstOrNull()?.let { dateFormat.format(Date(it)) } ?: "-"
-        }    Last: ${
-            sortedDates.lastOrNull()?.let { dateFormat.format(Date(it)) } ?: "-"
-        }"
-        canvas.drawText(
-            LectureTimetablePdfStyle.ellipsize(
-                summary,
-                LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText),
-                LectureTimetablePdfStyle.PAGE_WIDTH - 2 * LectureTimetablePdfStyle.MARGIN
-            ),
-            LectureTimetablePdfStyle.MARGIN,
-            headerBottom + 8f,
-            LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText)
-        )
     }
 
     private fun drawDateHeader(
@@ -175,6 +167,34 @@ object ExamTimetablePdfGenerator {
         )
     }
 
+    private fun createExamPdfRow(exam: Exam, linkedCourse: Course?, hasClash: Boolean): ExamPdfRow {
+        val courseCode = exam.courseCode.ifBlank { linkedCourse?.code.orEmpty() }.ifBlank { "-" }
+        val values = listOf(
+            formatExamTimeRange(exam.time, exam.endTime),
+            courseCode,
+            linkedCourse?.title?.ifBlank { "-" } ?: "-",
+            exam.venue.ifBlank { "-" },
+            exam.seatNumber.ifBlank { "-" }
+        )
+        val edges = columnEdges()
+        val widths = edges.zipWithNext { left, right -> right - left - 8f }.toMutableList().apply {
+            if (hasClash) this[1] -= 12f
+        }
+        val textPaint = LectureTimetablePdfStyle.paint(8f, LectureTimetablePdfStyle.darkText)
+        val measure: (String, Float) -> Float = { text, size ->
+            LectureTimetablePdfStyle.measureText(textPaint, text, size)
+        }
+        val wrapped = wrapPdfTableRow(values, widths, 8f, 10f, 10f, measure)
+        return ExamPdfRow(
+            exam,
+            values[2],
+            courseCode,
+            values[3],
+            values[4],
+            wrapped
+        )
+    }
+
     private fun drawTableHeader(canvas: Canvas, top: Float) {
         val edges = columnEdges()
         val right = LectureTimetablePdfStyle.PAGE_WIDTH - LectureTimetablePdfStyle.MARGIN
@@ -194,8 +214,7 @@ object ExamTimetablePdfGenerator {
 
     private fun drawExamRow(
         canvas: Canvas,
-        row: ExamTimetableRow,
-        courseCode: String,
+        row: ExamPdfRow,
         top: Float,
         isPast: Boolean,
         hasClash: Boolean
@@ -210,31 +229,18 @@ object ExamTimetablePdfGenerator {
             strokeWidth = 0.65f
             style = Paint.Style.STROKE
         }
-        val textPaint = LectureTimetablePdfStyle.paint(8f, textColor)
-        canvas.drawRect(edges.first(), top, right, top + ROW_HEIGHT, rowPaint)
-        canvas.drawRect(edges.first(), top, right, top + ROW_HEIGHT, borderPaint)
+        canvas.drawRect(edges.first(), top, right, top + row.wrapped.height, rowPaint)
+        canvas.drawRect(edges.first(), top, right, top + row.wrapped.height, borderPaint)
 
-        val values = listOf(
-            formatExamTimeRange(row.exam.time, row.exam.endTime),
-            courseCode,
-            row.courseTitle,
-            row.venue,
-            row.seatNumber
-        )
-        values.forEachIndexed { index, value ->
+        row.wrapped.cells.forEachIndexed { index, lines ->
             val x = edges[index] + 4f
-            val width = edges[index + 1] - edges[index] - 8f
-            val markerWidth = if (hasClash && index == 1) 9f else 0f
             val paint = if (index == 1) {
                 LectureTimetablePdfStyle.paint(8f, textColor, bold = true)
-            } else textPaint
-            canvas.drawText(
-                LectureTimetablePdfStyle.ellipsize(value, paint, width - markerWidth),
-                x,
-                top + 16f,
-                paint
-            )
-            if (index > 0) canvas.drawLine(edges[index], top, edges[index], top + ROW_HEIGHT, borderPaint)
+            } else LectureTimetablePdfStyle.paint(8f, textColor)
+            lines.forEachIndexed { lineIndex, line ->
+                canvas.drawText(line, x, top + 8f + paint.textSize + lineIndex * 10f, paint)
+            }
+            if (index > 0) canvas.drawLine(edges[index], top, edges[index], top + row.wrapped.height, borderPaint)
             if (hasClash && index == 1) {
                 val markerPaint = LectureTimetablePdfStyle.paint(8f, textColor, bold = true).apply {
                     textAlign = Paint.Align.RIGHT
@@ -256,24 +262,6 @@ object ExamTimetablePdfGenerator {
         }
     }
 
-    private fun wrapLine(text: String, paint: Paint, maxWidth: Float): List<String> {
-        if (paint.measureText(text) <= maxWidth) return listOf(text)
-        val words = text.split(' ')
-        val result = mutableListOf<String>()
-        var line = ""
-        for (word in words) {
-            val candidate = if (line.isEmpty()) word else "$line $word"
-            if (paint.measureText(candidate) <= maxWidth) {
-                line = candidate
-            } else {
-                if (line.isNotEmpty()) result.add(line)
-                line = LectureTimetablePdfStyle.ellipsize(word, paint, maxWidth)
-            }
-        }
-        if (line.isNotEmpty()) result.add(line)
-        return result
-    }
-
     private fun formatClash(clash: ExamClashGroup): String {
         val date = dateFormatter().format(Date(clash.dateMillis))
         val items = clash.exams.joinToString(" and ") {
@@ -287,10 +275,10 @@ object ExamTimetablePdfGenerator {
         val width = LectureTimetablePdfStyle.PAGE_WIDTH - 2 * LectureTimetablePdfStyle.MARGIN
         return listOf(
             left,
-            left + width * 0.145f,
-            left + width * 0.315f,
-            left + width * 0.595f,
-            left + width * 0.825f,
+            left + width * 0.13f,
+            left + width * 0.27f,
+            left + width * 0.61f,
+            left + width * 0.86f,
             left + width
         )
     }

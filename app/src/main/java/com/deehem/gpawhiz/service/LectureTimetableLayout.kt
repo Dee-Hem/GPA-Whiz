@@ -20,6 +20,12 @@ data class LectureBlockPlacement(
     val hasClash: Boolean
 )
 
+enum class WeeklyBlockTextMode {
+    STACKED,
+    INLINE,
+    CODE_ONLY
+}
+
 data class LectureClashGroup(
     val dayOfWeek: Int,
     val slots: List<TimetableSlot>
@@ -143,20 +149,58 @@ fun lectureClashGroups(slots: List<TimetableSlot>): List<LectureClashGroup> {
 fun lectureVisibleDays(slots: List<TimetableSlot>): List<Int> =
     (1..5).toList() + (6..7).filter { weekendDay -> slots.any { it.dayOfWeek == weekendDay } }
 
+fun weeklyDayColumnWidth(pageWidth: Float, dayCount: Int, margin: Float = 40f, axisWidth: Float = 39f): Float {
+    require(dayCount > 0) { "A weekly grid must have at least one day column." }
+    return (pageWidth - 2 * margin - axisWidth) / dayCount
+}
+
+fun hourAxisLabelPositions(hourRange: LectureHourRange, top: Float, bottom: Float): List<Float> {
+    require(hourRange.durationMinutes > 0 && bottom > top) { "Hour axis requires a positive range and height." }
+    return (hourRange.startHour..hourRange.endHour).map { hour ->
+        top + (hour - hourRange.startHour).toFloat() / (hourRange.endHour - hourRange.startHour) * (bottom - top)
+    }
+}
+
+fun weeklyBlockTextMode(
+    textWidth: Float,
+    blockHeight: Float,
+    courseCodeWidth: Float,
+    timeRangeWidth: Float,
+    lineHeight: Float = 8.75f,
+    horizontalGap: Float = 4f
+): WeeklyBlockTextMode = when {
+    blockHeight >= lineHeight * 2f + 2f -> WeeklyBlockTextMode.STACKED
+    courseCodeWidth + horizontalGap + timeRangeWidth <= textWidth -> WeeklyBlockTextMode.INLINE
+    else -> WeeklyBlockTextMode.CODE_ONLY
+}
+
 fun timetableCourseColor(courseCode: String): TimetableCourseColor {
+    return timetableCourseColors(listOf(courseCode)).getValue(normalizeCourseCode(courseCode))
+}
+
+fun timetableCourseColor(courseCode: String, allCourseCodes: Collection<String>): TimetableCourseColor =
+    timetableCourseColors(allCourseCodes).getValue(normalizeCourseCode(courseCode))
+
+fun timetableCourseColors(courseCodes: Collection<String>): Map<String, TimetableCourseColor> {
     val palette = listOf(
         TimetableCourseColor(0xFFE8F0FE.toInt(), 0xFF2B5896.toInt(), 0xFF17375E.toInt()),
-        TimetableCourseColor(0xFFE8F5E9.toInt(), 0xFF2E7D32.toInt(), 0xFF1B5E20.toInt()),
         TimetableCourseColor(0xFFFFF3E0.toInt(), 0xFFEF6C00.toInt(), 0xFFE65100.toInt()),
-        TimetableCourseColor(0xFFF3E5F5.toInt(), 0xFF7B1FA2.toInt(), 0xFF4A148C.toInt()),
+        TimetableCourseColor(0xFFE8F5E9.toInt(), 0xFF2E7D32.toInt(), 0xFF1B5E20.toInt()),
         TimetableCourseColor(0xFFFFEBEE.toInt(), 0xFFC62828.toInt(), 0xFF7F0000.toInt()),
+        TimetableCourseColor(0xFFF3E5F5.toInt(), 0xFF7B1FA2.toInt(), 0xFF4A148C.toInt()),
         TimetableCourseColor(0xFFE0F2F1.toInt(), 0xFF00796B.toInt(), 0xFF004D40.toInt()),
         TimetableCourseColor(0xFFFFFDE7.toInt(), 0xFF9E7A00.toInt(), 0xFF5D4800.toInt()),
-        TimetableCourseColor(0xFFECEFF1.toInt(), 0xFF455A64.toInt(), 0xFF263238.toInt())
+        TimetableCourseColor(0xFFFCE4EC.toInt(), 0xFFC2185B.toInt(), 0xFF880E4F.toInt()),
+        TimetableCourseColor(0xFFEFEBE9.toInt(), 0xFF6D4C41.toInt(), 0xFF3E2723.toInt()),
+        TimetableCourseColor(0xFFF1F8E9.toInt(), 0xFF558B2F.toInt(), 0xFF33691E.toInt()),
+        TimetableCourseColor(0xFFEDE7F6.toInt(), 0xFF512DA8.toInt(), 0xFF311B92.toInt()),
+        TimetableCourseColor(0xFFE0F7FA.toInt(), 0xFF00838F.toInt(), 0xFF004D40.toInt())
     )
-    val index = Math.floorMod(courseCode.trim().uppercase(Locale.ROOT).hashCode(), palette.size)
-    return palette[index]
+    val sortedCodes = courseCodes.map(::normalizeCourseCode).distinct().sorted()
+    return sortedCodes.mapIndexed { index, code -> code to palette[index % palette.size] }.toMap()
 }
+
+private fun normalizeCourseCode(code: String): String = code.trim().uppercase(Locale.ROOT)
 
 internal fun timedLecture(slot: TimetableSlot): TimedLecture {
     require(slot.dayOfWeek in 1..7) { "Lecture day must be between 1 and 7." }

@@ -162,7 +162,6 @@ fun LecturesTab(viewModel: GpaViewModel, onDeleteSlot: (TimetableSlot) -> Unit) 
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
-    var examToEdit by remember { mutableStateOf<Exam?>(null) }
     val daysMap = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -448,6 +447,7 @@ fun ExamsTab(viewModel: GpaViewModel, onDeleteExam: (Exam) -> Unit) {
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var examToEdit by remember { mutableStateOf<Exam?>(null) }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(
