@@ -63,6 +63,10 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val timetableSlots by viewModel.timetableSlots.collectAsState()
+    val courses by viewModel.courses.collectAsState()
+    val semesters by viewModel.semesters.collectAsState()
+    val studentProfile by viewModel.studentProfile.collectAsState()
 
     // SAF launchers
     val createJsonLauncher = rememberLauncherForActivityResult(
@@ -485,7 +489,81 @@ fun SettingsScreen(
             )
         }
 
-        // 3. Data Portability Backup & Restores Blocks
+        // 3. Lecture Timetable Export
+        var showLectureTimetableExportDialog by remember { mutableStateOf(false) }
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                    Column {
+                        Text(
+                            text = "Lecture Timetable",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Save your scheduled lectures as a printable PDF",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = { showLectureTimetableExportDialog = true },
+                    enabled = timetableSlots.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("export_timetable_pdf_button")
+                ) {
+                    Text("Export lecture timetable (PDF)")
+                }
+                if (timetableSlots.isEmpty()) {
+                    Text(
+                        text = "Add lectures in the Timetable tab first",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp).testTag("timetable_export_empty_hint")
+                    )
+                }
+            }
+        }
+
+        if (showLectureTimetableExportDialog) {
+            LectureTimetableExportDialog(
+                viewModel = viewModel,
+                student = studentProfile,
+                semesters = semesters,
+                courses = courses,
+                slots = timetableSlots,
+                onDismiss = { showLectureTimetableExportDialog = false }
+            )
+        }
+
+        // 4. Data Portability Backup & Restores Blocks
         Card(
             shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),

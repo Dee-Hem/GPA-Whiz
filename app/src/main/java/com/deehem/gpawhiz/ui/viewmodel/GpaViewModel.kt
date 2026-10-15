@@ -673,6 +673,37 @@ class GpaViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun exportLectureTimetablePdf(
+        outputStream: OutputStream,
+        layout: LectureTimetablePdfLayout,
+        semesterId: Int?
+    ) {
+        try {
+            val allCourses = courses.value
+            val courseById = allCourses.associateBy { it.id }
+            val selectedSemester = semesterId?.let { id -> semesters.value.find { it.id == id } }
+                ?: semesters.value.find { it.id == studentProfile.value.currentSemesterId }
+            val exportSlots = timetableSlots.value.filter { slot ->
+                val linkedCourse = slot.courseId?.let(courseById::get)
+                semesterId == null || linkedCourse == null || linkedCourse.semesterId == semesterId
+            }
+            val semesterOrSession = selectedSemester?.name
+                ?: studentProfile.value.academicSession.ifBlank { "Academic Session" }
+
+            LectureTimetablePdfGenerator.generate(
+                student = studentProfile.value,
+                semesterOrSession = semesterOrSession,
+                slots = exportSlots,
+                courses = allCourses,
+                layout = layout,
+                outputStream = outputStream
+            )
+            _uiMessage.value = "Lecture timetable PDF exported."
+        } catch (e: Exception) {
+            _uiMessage.value = "Lecture timetable PDF export failed: ${e.message}"
+        }
+    }
+
     fun exportScholarshipsPdf(outputStream: OutputStream, activeOnly: Boolean = false) {
         try {
             val list = if (activeOnly) {
